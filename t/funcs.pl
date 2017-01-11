@@ -1,4 +1,5 @@
 
+use lib 'lib';
 sub ntest ($$$) {
   my $ret = 1;
   if ($_[1] != $_[2]) {

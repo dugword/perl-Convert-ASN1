@@ -1,4 +1,5 @@
 #!/usr/local/bin/perl
+use lib 'lib';
 
 #
 # Test that default EXPLICIT tagging works.

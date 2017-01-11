@@ -1,4 +1,5 @@
 #!/usr/local/bin/perl
+use lib 'lib';
 
 print "1..26\n";
 

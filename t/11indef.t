@@ -1,4 +1,5 @@
 #!/usr/local/bin/perl
+use lib 'lib';
 
 #
 # Test that indefinite length encodings can be decoded

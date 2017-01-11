@@ -1,4 +1,5 @@
 #!/usr/local/bin/perl
+use lib 'lib';
 
 #
 # Test the use of sets

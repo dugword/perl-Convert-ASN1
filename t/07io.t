@@ -1,4 +1,5 @@
 #!/usr/local/bin/perl
+use lib 'lib';
 
 use Convert::ASN1 qw(:io);
 use IO::Socket;
