@@ -1,0 +1,13 @@
+#!/usr/bin/env perl
+
+use 5.024;
+use strict;
+use warnings;
+
+print(<<LDAP_ASN) or die;
+This is a string
+and so is this
+and one more
+LDAP_ASN
+
+#print $str;
