@@ -6,19 +6,385 @@ package Convert::ASN1;
 
 use 5.024;
 use strict;
-use vars qw($VERSION @ISA @EXPORT_OK %EXPORT_TAGS @opParts @opName $AUTOLOAD);
-use vars qw(
-  $asn $yychar $yyerrflag $yynerrs $yyn @yyss
-  $yyssp $yystate @yyvs $yyvsp $yylval $yys $yym $yyval
-);
-use Exporter;
+use warnings;
 
-use constant CHECK_UTF8 => $] > 5.007;
+use Data::Dump;
+
+use Carp;
+use Exporter;
+use Socket;
+use bytes;
+use Math::BigInt;
+
+require Encode;
+
+sub blerg {
+    # open my $fh, '>>', './sub_calls'
+    #     or die "could not open file";
+
+    # print {$fh} shift, "\n";
+}
+
+our ($VERSION, @ISA, @EXPORT_OK, %EXPORT_TAGS,
+    $asn,
+);
+
+my $yylval;
+my @_dec_real_base = (2,8,16);
+# In XS the will convert the tree between perl and C structs
+
+# my $asn;
+
+use constant {
+    constWORD => 1,
+    constCLASS => 2,
+    constSEQUENCE => 3,
+    constSET => 4,
+    constCHOICE => 5,
+    constOF => 6,
+    constIMPLICIT => 7,
+    constEXPLICIT => 8,
+    constOPTIONAL => 9,
+    constLBRACE => 10,
+    constRBRACE => 11,
+    constCOMMA => 12,
+    constANY => 13,
+    constASSIGN => 14,
+    constNUMBER => 15,
+    constENUM => 16,
+    constCOMPONENTS => 17,
+    constPOSTRBRACE => 18,
+    constDEFINED => 19,
+    constBY => 20,
+    constEXTENSION_MARKER => 21,
+    constYYERRCODE => 256,
+    constYYFINAL => 5,
+    constYYMAXTOKEN => 21,
+    constYYTABLESIZE => 181,
+};
+
+use constant {
+    ASN_BOOLEAN => 0x01,
+    ASN_INTEGER => 0x02,
+    ASN_BIT_STR => 0x03,
+    ASN_OCTET_STR => 0x04,
+    ASN_NULL => 0x05,
+    ASN_OBJECT_ID => 0x06,
+    ASN_REAL => 0x09,
+    ASN_ENUMERATED => 0x0A,
+    ASN_RELATIVE_OID => 0x0D,
+    ASN_SEQUENCE => 0x10,
+    ASN_SET => 0x11,
+    ASN_PRINT_STR => 0x13,
+    ASN_IA5_STR => 0x16,
+    ASN_UTC_TIME => 0x17,
+    ASN_GENERAL_TIME => 0x18,
+
+    ASN_UNIVERSAL => 0x00,
+    ASN_APPLICATION => 0x40,
+    ASN_CONTEXT => 0x80,
+    ASN_PRIVATE => 0xC0,
+
+    ASN_PRIMITIVE => 0x00,
+    ASN_CONSTRUCTOR => 0x20,
+
+    ASN_LONG_LEN => 0x80,
+    ASN_EXTENSION_ID => 0x1F,
+    ASN_BIT => 0x80,
+};
+
+use constant {
+    cTAG => 0,
+    cTYPE => 1,
+    cVAR => 2,
+    cLOOP => 3,
+    cOPT => 4,
+    cEXT => 5,
+    cCHILD => 6,
+    cDEFINE => 7,
+};
+
+use constant {
+    opUNKNOWN => 0,
+    opBOOLEAN => 1,
+    opINTEGER => 2,
+    opBITSTR => 3,
+    opSTRING => 4,
+    opNULL => 5,
+    opOBJID => 6,
+    opREAL => 7,
+    opSEQUENCE => 8,
+    opEXPLICIT => 9,
+    opSET => 10,
+    opUTIME => 11,
+    opGTIME => 12,
+    opUTF8 => 13,
+    opANY => 14,
+    opCHOICE => 15,
+    opROID => 16,
+    opBCD => 17,
+    opEXTENSIONS => 18,
+};
+
+my %yystate = (
+    'State51','',
+    'State34' => '',
+    'State11' => '',
+    'State33' => '',
+    'State24' => '',
+    'State47' => '',
+    'State40' => '',
+    'State31' => '',
+    'State37' => '',
+    'State23' => '',
+    'State22' => '',
+    'State21' => '',
+    'State57' => '',
+    'State39' => '',
+    'State56' => '',
+    'State20' => '',
+    'State25' => '',
+    'State38' => '',
+    'State62' => '',
+    'State14' => '',
+    'State19' => '',
+    'State5'  => '',
+    'State53' => '',
+    'State26' => '',
+    'State27' => '',
+    'State50' => '',
+    'State36' => '',
+    'State4'  => '',
+    'State3'  => '',
+    'State32' => '',
+    'State49' => '',
+    'State43' => '',
+    'State30' => '',
+    'State35' => '',
+    'State52' => '',
+    'State55' => '',
+    'State42' => '',
+    'State28' => '',
+    'State58' => '',
+    'State61' => '',
+    'State41' => '',
+    'State18' => '',
+    'State59' => '',
+    'State1'  => '',
+    'State60' => ''
+);
+
+my %tag_class = (
+  APPLICATION => ASN_APPLICATION,
+  UNIVERSAL   => ASN_UNIVERSAL,
+  PRIVATE     => ASN_PRIVATE,
+  CONTEXT     => ASN_CONTEXT,
+  ''          => ASN_CONTEXT # if not specified, its CONTEXT
+);
+
+my %reserved = (
+  'OPTIONAL'   => constOPTIONAL,
+  'CHOICE'     => constCHOICE,
+  'OF'         => constOF,
+  'IMPLICIT'   => constIMPLICIT,
+  'EXPLICIT'   => constEXPLICIT,
+  'SEQUENCE'   => constSEQUENCE,
+  'SET'        => constSET,
+  'ANY'        => constANY,
+  'ENUM'       => constENUM,
+  'ENUMERATED' => constENUM,
+  'COMPONENTS' => constCOMPONENTS,
+  '{'          => constLBRACE,
+  '}'          => constRBRACE,
+  ','          => constCOMMA,
+  '::='        => constASSIGN,
+  'DEFINED'    => constDEFINED,
+  'BY'         => constBY,
+);
+
+my @yylhs = (                                               -1,
+    0,    0,    2,    2,    3,    3,    6,    6,    6,    6,
+    8,   13,   13,   12,   14,   14,   14,    9,    9,    9,
+   10,   18,   18,   18,   18,   18,   19,   19,   11,   16,
+   16,   20,   20,   20,   21,   21,    1,    1,    1,   22,
+   22,   22,   24,   24,   24,   24,   23,   23,   23,   23,
+   15,   15,    4,    4,    5,    5,    5,   17,   17,   25,
+    7,    7,
+);
+
+my @yylen = (                                                2,
+    1,    1,    3,    4,    4,    1,    1,    1,    1,    1,
+    3,    1,    1,    6,    1,    1,    1,    4,    4,    4,
+    4,    1,    1,    1,    2,    1,    0,    3,    1,    1,
+    2,    1,    3,    3,    4,    1,    0,    1,    2,    1,
+    3,    3,    2,    1,    1,    1,    4,    1,    3,    1,
+    0,    1,    0,    1,    0,    1,    1,    1,    3,    2,
+    0,    1,
+);
+
+my @yydefred = (                                             0,
+    0,   54,    0,   50,    0,    1,    0,    0,   48,    0,
+   40,    0,    0,    0,    0,   57,   56,    0,    0,    0,
+    3,    0,    6,    0,   11,    0,    0,    0,    0,   49,
+    0,   41,   42,    0,   22,    0,    0,    0,    0,   46,
+   44,    0,   45,    0,   29,   47,    4,    0,    0,    0,
+    0,    7,    8,    9,   10,    0,   25,    0,   52,   43,
+    0,    0,    0,    0,   36,    0,    0,   32,   62,    5,
+    0,    0,    0,   58,    0,   18,   19,    0,   20,    0,
+    0,   28,   60,   21,    0,    0,    0,   34,   33,   59,
+    0,    0,   17,   15,   16,    0,   35,   14,
+);
+
+my @yydgoto = (                                              5,
+    6,    7,   21,    8,   18,   51,   70,    9,   52,   53,
+   54,   55,   44,   96,   60,   66,   73,   45,   57,   67,
+   68,   10,   11,   46,   74,
+);
+
+my @yysindex = (                                             2,
+   58,    0,    8,    0,    0,    0,   11,  123,    0,    3,
+    0,   59,  123,   19,   73,    0,    0,   92,    7,    7,
+    0,  123,    0,  119,    0,   59,  107,  109,  116,    0,
+   82,    0,    0,  119,    0,  107,  109,   84,  126,    0,
+    0,   90,    0,  132,    0,    0,    0,    7,    7,   10,
+  139,    0,    0,    0,    0,  141,    0,  143,    0,    0,
+   82,  156,  159,   82,    0,  160,    4,    0,    0,    0,
+  171,  158,    6,    0,  123,    0,    0,  123,    0,   10,
+   10,    0,    0,    0,  143,  124,  119,    0,    0,    0,
+  107,  109,    0,    0,    0,   90,    0,    0,
+);
+
+my @yyrindex = (                                           155,
+  105,    0,    0,    0,    0,    0,  174,  111,    0,   80,
+    0,  105,  138,    0,    0,    0,    0,    0,  161,  145,
+    0,  138,    0,    0,    0,  105,    0,    0,    0,    0,
+  105,    0,    0,    0,    0,   29,   33,   70,   74,    0,
+    0,   46,    0,    0,    0,    0,    0,   45,   45,    0,
+   54,    0,    0,    0,    0,    0,    0,    0,    0,    0,
+  105,    0,    0,  105,    0,    0,  164,    0,    0,    0,
+    0,    0,    0,    0,  138,    0,    0,  138,    0,    0,
+  165,    0,    0,    0,    0,    0,    0,    0,    0,    0,
+   89,   93,    0,    0,    0,   25,    0,    0,
+);
+
+my @yygindex = (                                             0,
+   85,    0,  151,    1,  -12,   91,    0,   47,  -18,  -19,
+  -17,  157,    0,    0,   83,    0,    0,    0,    0,    0,
+   -3,    0,  127,    0,   95,
+);
+
+my @yytable = (                                             30,
+   24,   13,    1,    2,   41,   40,   42,   31,    2,   34,
+   64,   15,   22,   14,   19,   80,   84,   85,    3,   25,
+   20,   81,    4,    3,   51,   51,   22,    4,   23,   23,
+   65,   13,   24,   24,   12,   51,   51,   23,   13,   23,
+   23,   24,   51,   24,   24,   51,   23,   53,   53,   53,
+   24,   53,   53,   61,   61,   37,   51,   51,   23,    2,
+    2,   75,   86,   51,   78,   87,   94,   93,   95,   27,
+   27,   12,   23,   26,   26,    3,   88,   89,   27,   38,
+   27,   27,   26,    2,   26,   26,   26,   27,   23,   23,
+   38,   26,   24,   24,   27,   28,   29,   23,   59,   23,
+   23,   24,   56,   24,   24,   53,   23,   53,   53,   53,
+   24,   53,   53,   55,   55,   55,   48,   53,   49,   35,
+   53,   36,   37,   29,   35,   50,   91,   92,   29,   16,
+   17,   38,   62,   63,   39,   58,   38,   61,   55,   39,
+   55,   55,   55,   72,   39,   32,   33,   53,   53,   53,
+   55,   53,   53,   55,   37,   39,   69,   53,   53,   53,
+   71,   53,   53,   53,   53,   53,   76,   53,   53,   77,
+   79,   82,   83,    2,   30,   31,   47,   97,   98,   90,
+   43,
+);
+
+my @yycheck = (                                             18,
+   13,    1,    1,    2,   24,   24,   24,    1,    2,   22,
+    1,    1,   12,    6,   12,   12,   11,   12,   17,    1,
+   18,   18,   21,   17,    0,    1,   26,   21,    0,    1,
+   21,   31,    0,    1,    6,   11,   12,    9,    6,   11,
+   12,    9,   18,   11,   12,    0,   18,    3,    4,    5,
+   18,    7,    8,    0,    1,   11,   11,   12,   12,    2,
+    2,   61,   75,   18,   64,   78,   86,   86,   86,    0,
+    1,   14,   26,    0,    1,   17,   80,   81,    9,    0,
+   11,   12,    9,    2,   11,   12,   14,   18,    0,    1,
+   11,   18,    0,    1,    3,    4,    5,    9,    9,   11,
+   12,    9,   19,   11,   12,    1,   18,    3,    4,    5,
+   18,    7,    8,    3,    4,    5,   10,   13,   10,    1,
+   16,    3,    4,    5,    1,   10,    3,    4,    5,    7,
+    8,   13,   48,   49,   16,   10,   13,    6,    1,   16,
+    3,    4,    5,    1,    0,   19,   20,    3,    4,    5,
+   13,    7,    8,   16,    0,   11,   18,    3,    4,    5,
+   20,    7,    8,    3,    4,    5,   11,    7,    8,   11,
+   11,    1,   15,    0,   11,   11,   26,   87,   96,   85,
+   24,
+);
+
+my %type = (
+    '10' => 'SEQUENCE',
+    '01' => 'BOOLEAN',
+    '0A' => 'ENUM',
+    '0D' => 'RELATIVE-OID',
+    '11' => 'SET',
+    '02' => 'INTEGER',
+    '03' => 'BIT STRING',
+    'C0' => '[PRIVATE %d]',
+    '04' => 'STRING',
+    '40' => '[APPLICATION %d]',
+    '05' => 'NULL',
+    '06' => 'OBJECT ID',
+    '80' => '[CONTEXT %d]',
+);
+
+
+my %base_type = (
+  BOOLEAN        => [ asn_encode_tag(ASN_BOOLEAN),        opBOOLEAN ],
+  INTEGER        => [ asn_encode_tag(ASN_INTEGER),        opINTEGER ],
+  BIT_STRING        => [ asn_encode_tag(ASN_BIT_STR),        opBITSTR  ],
+  OCTET_STRING        => [ asn_encode_tag(ASN_OCTET_STR),        opSTRING  ],
+  STRING        => [ asn_encode_tag(ASN_OCTET_STR),        opSTRING  ],
+  NULL             => [ asn_encode_tag(ASN_NULL),        opNULL    ],
+  OBJECT_IDENTIFIER => [ asn_encode_tag(ASN_OBJECT_ID),        opOBJID   ],
+  REAL            => [ asn_encode_tag(ASN_REAL),        opREAL    ],
+  ENUMERATED        => [ asn_encode_tag(ASN_ENUMERATED),    opINTEGER ],
+  ENUM            => [ asn_encode_tag(ASN_ENUMERATED),    opINTEGER ],
+  'RELATIVE-OID'    => [ asn_encode_tag(ASN_RELATIVE_OID),    opROID      ],
+
+  SEQUENCE        => [ asn_encode_tag(ASN_SEQUENCE | ASN_CONSTRUCTOR), opSEQUENCE ],
+  EXPLICIT        => [ asn_encode_tag(ASN_SEQUENCE | ASN_CONSTRUCTOR), opEXPLICIT ],
+  SET               => [ asn_encode_tag(ASN_SET      | ASN_CONSTRUCTOR), opSET ],
+
+  ObjectDescriptor  => [ asn_encode_tag(ASN_UNIVERSAL |  7), opSTRING ],
+  UTF8String        => [ asn_encode_tag(ASN_UNIVERSAL | 12), opUTF8 ],
+  NumericString     => [ asn_encode_tag(ASN_UNIVERSAL | 18), opSTRING ],
+  PrintableString   => [ asn_encode_tag(ASN_UNIVERSAL | 19), opSTRING ],
+  TeletexString     => [ asn_encode_tag(ASN_UNIVERSAL | 20), opSTRING ],
+  T61String         => [ asn_encode_tag(ASN_UNIVERSAL | 20), opSTRING ],
+  VideotexString    => [ asn_encode_tag(ASN_UNIVERSAL | 21), opSTRING ],
+  IA5String         => [ asn_encode_tag(ASN_UNIVERSAL | 22), opSTRING ],
+  UTCTime           => [ asn_encode_tag(ASN_UNIVERSAL | 23), opUTIME ],
+  GeneralizedTime   => [ asn_encode_tag(ASN_UNIVERSAL | 24), opGTIME ],
+  GraphicString     => [ asn_encode_tag(ASN_UNIVERSAL | 25), opSTRING ],
+  VisibleString     => [ asn_encode_tag(ASN_UNIVERSAL | 26), opSTRING ],
+  ISO646String      => [ asn_encode_tag(ASN_UNIVERSAL | 26), opSTRING ],
+  GeneralString     => [ asn_encode_tag(ASN_UNIVERSAL | 27), opSTRING ],
+  CharacterString   => [ asn_encode_tag(ASN_UNIVERSAL | 28), opSTRING ],
+  UniversalString   => [ asn_encode_tag(ASN_UNIVERSAL | 28), opSTRING ],
+  BMPString         => [ asn_encode_tag(ASN_UNIVERSAL | 30), opSTRING ],
+  BCDString         => [ asn_encode_tag(ASN_OCTET_STR), opBCD ],
+
+  CHOICE => [ '', opCHOICE ],
+  ANY    => [ '', opANY ],
+
+  EXTENSION_MARKER => [ '', opEXTENSIONS ],
+);
+
+my $tagdefault = 1; # 0:IMPLICIT , 1:EXPLICIT default
+
+my $reserved = join("|", reverse sort grep { /\w/ } keys %reserved);
+
+my $pos;
+my $last_pos;
+my @stacked;
 
 BEGIN {
-  eval { require bytes and 'bytes'->import };
-
-  require Encode;
 
   @ISA = qw(Exporter);
 
@@ -35,70 +401,19 @@ BEGIN {
         ASN_UNIVERSAL   ASN_APPLICATION  ASN_CONTEXT      ASN_PRIVATE
         ASN_PRIMITIVE   ASN_CONSTRUCTOR  ASN_LONG_LEN     ASN_EXTENSION_ID ASN_BIT)],
 
-    tag   => [qw(asn_tag asn_decode_tag2 asn_decode_tag asn_encode_tag asn_decode_length asn_encode_length)]
+    # tag   => [qw(asn_tag asn_decode_tag2 asn_decode_tag asn_encode_tag asn_decode_length asn_encode_length)]
+     tag   => [qw(asn_tag  asn_decode_tag asn_encode_tag asn_decode_length asn_encode_length)]
   );
 
   @EXPORT_OK = map { @$_ } values %EXPORT_TAGS;
   $EXPORT_TAGS{all} = \@EXPORT_OK;
-
-  @opParts = qw(
-    cTAG cTYPE cVAR cLOOP cOPT cEXT cCHILD cDEFINE
-  );
-
-  @opName = qw(
-    opUNKNOWN opBOOLEAN opINTEGER opBITSTR opSTRING opNULL opOBJID opREAL
-    opSEQUENCE opEXPLICIT opSET opUTIME opGTIME opUTF8 opANY opCHOICE opROID opBCD
-    opEXTENSIONS
-  );
-
-  foreach my $l (\@opParts, \@opName) {
-    my $i = 0;
-    foreach my $name (@$l) {
-      my $j = $i++;
-      no strict 'refs';
-      *{__PACKAGE__ . '::' . $name} = sub () { $j }
-    }
-  }
 }
 
-sub _internal_syms {
-  my $pkg = caller;
-  no strict 'refs';
-  for my $sub (@opParts,@opName,'dump_op') {
-    *{$pkg . '::' . $sub} = \&{__PACKAGE__ . '::' . $sub};
-  }
-}
 
-sub ASN_BOOLEAN 	() { 0x01 }
-sub ASN_INTEGER 	() { 0x02 }
-sub ASN_BIT_STR 	() { 0x03 }
-sub ASN_OCTET_STR 	() { 0x04 }
-sub ASN_NULL 		() { 0x05 }
-sub ASN_OBJECT_ID 	() { 0x06 }
-sub ASN_REAL 		() { 0x09 }
-sub ASN_ENUMERATED	() { 0x0A }
-sub ASN_RELATIVE_OID	() { 0x0D }
-sub ASN_SEQUENCE 	() { 0x10 }
-sub ASN_SET 		() { 0x11 }
-sub ASN_PRINT_STR	() { 0x13 }
-sub ASN_IA5_STR		() { 0x16 }
-sub ASN_UTC_TIME	() { 0x17 }
-sub ASN_GENERAL_TIME	() { 0x18 }
-
-sub ASN_UNIVERSAL 	() { 0x00 }
-sub ASN_APPLICATION 	() { 0x40 }
-sub ASN_CONTEXT 	() { 0x80 }
-sub ASN_PRIVATE		() { 0xC0 }
-
-sub ASN_PRIMITIVE	() { 0x00 }
-sub ASN_CONSTRUCTOR	() { 0x20 }
-
-sub ASN_LONG_LEN	() { 0x80 }
-sub ASN_EXTENSION_ID	() { 0x1F }
-sub ASN_BIT 		() { 0x80 }
 
 
 sub new {
+    blerg "sub new";
   my $pkg = shift;
   my $self = bless {}, $pkg;
 
@@ -108,29 +423,28 @@ sub new {
 
 
 sub configure {
+    blerg "sub configure";
   my $self = shift;
   my %opt = @_;
 
   $self->{options}{encoding} = uc($opt{encoding} || 'BER');
 
   unless ($self->{options}{encoding} =~ /^[BD]ER$/) {
-    require Carp;
-    Carp::croak("Unsupported encoding format '$opt{encoding}'");
+    croak("Unsupported encoding format '$opt{encoding}'");
   }
 
   # IMPLICIT as defalt for backwards compatibility, even though it's wrong.
   $self->{options}{tagdefault} = uc($opt{tagdefault} || 'IMPLICIT');
 
   unless ($self->{options}{tagdefault} =~ /^(?:EXPLICIT|IMPLICIT)$/) {
-    require Carp;
-    Carp::croak("Default tagging must be EXPLICIT/IMPLICIT. Not $opt{tagdefault}");
+    croak("Default tagging must be EXPLICIT/IMPLICIT. Not $opt{tagdefault}");
   }
 
 
   for my $type (qw(encode decode)) {
     if (exists $opt{$type}) {
       while(my($what,$value) = each %{$opt{$type}}) {
-	$self->{options}{"${type}_${what}"} = $value;
+    $self->{options}{"${type}_${what}"} = $value;
       }
     }
   }
@@ -139,6 +453,7 @@ sub configure {
 
 
 sub find {
+    blerg "sub find";
   my $self = shift;
   my $what = shift;
   return unless exists $self->{tree}{$what};
@@ -149,6 +464,7 @@ sub find {
 
 
 sub prepare {
+    blerg "sub prepare";
   my $self = shift;
   my $asn  = shift;
 
@@ -172,24 +488,13 @@ sub prepare {
     ### won't be able to get at the error.
   }
 
-  $self->{tree} = _pack_struct($tree);
+  $self->{tree} = $tree;
   $self->{script} = (values %$tree)[0];
   $self;
 }
 
-sub prepare_file {
-  my $self = shift;
-  my $asnp = shift;
-
-  local *ASN;
-  open( ASN, $asnp )
-      or do{ $self->{error} = $@; return; };
-  my $ret = $self->prepare( \*ASN );
-  close( ASN );
-  $ret;
-}
-
 sub registeroid {
+    blerg "sub registeroid";
   my $self = shift;
   my $oid  = shift;
   my $handler = shift;
@@ -198,29 +503,16 @@ sub registeroid {
   $self->{oidtable}{$oid}=$handler;
 }
 
-sub registertype {
-   my $self = shift;
-   my $def = shift;
-   my $type = shift;
-   my $handler = shift;
-
-   $self->{options}{handlers}{$def}{$type}=$handler;
-}
-
-# In XS the will convert the tree between perl and C structs
-
-sub _pack_struct { $_[0] }
-sub _unpack_struct { $_[0] }
 
 ##
 ## Encoding
 ##
 
 sub encode {
+    blerg "sub encode";
   my $self  = shift;
   my $stash = @_ == 1 ? shift : { @_ };
   my $buf = '';
-  local $SIG{__DIE__};
   eval { _encode($self->{options}, $self->{script}, $stash, [], $buf) }
     or do { $self->{error} = $@; undef }
 }
@@ -231,11 +523,12 @@ sub encode {
 # We assume that the tag has been correctly generated with asn_tag()
 
 sub asn_encode_tag {
+    blerg "sub asn_encode";
   $_[0] >> 8
     ? $_[0] & 0x8000
       ? $_[0] & 0x800000
-	? pack("V",$_[0])
-	: substr(pack("V",$_[0]),0,3)
+    ? pack("V",$_[0])
+    : substr(pack("V",$_[0]),0,3)
       : pack("v", $_[0])
     : pack("C",$_[0]);
 }
@@ -246,6 +539,7 @@ sub asn_encode_tag {
 # bytes of all zeros are not encoded
 
 sub asn_encode_length {
+    blerg "sub asn_encode_length";
 
   if($_[0] >> 7) {
     my $lenlen = &num_length;
@@ -262,10 +556,10 @@ sub asn_encode_length {
 ##
 
 sub decode {
+    blerg "sub decode";
   my $self  = shift;
   my $ret;
 
-  local $SIG{__DIE__};
   eval {
     my (%stash, $result);
     my $script = $self->{script};
@@ -282,14 +576,14 @@ sub decode {
     }
 
     _decode(
-	$self->{options},
-	$self->{script},
-	$stash,
-	0,
-	length $_[0], 
-	undef,
-	{},
-	$_[0]);
+    $self->{options},
+    $self->{script},
+    $stash,
+    0,
+    length $_[0], 
+    undef,
+    {},
+    $_[0]);
 
     $ret = $result;
     1;
@@ -300,6 +594,7 @@ sub decode {
 
 
 sub asn_decode_length {
+    blerg "sub asn_decode_length";
   return unless length $_[0];
 
   my $len = unpack("C",$_[0]);
@@ -316,6 +611,7 @@ sub asn_decode_length {
 
 
 sub asn_decode_tag {
+    blerg "sub asn_decode_tag";
   return unless length $_[0];
 
   my $tag = unpack("C", $_[0]);
@@ -333,24 +629,6 @@ sub asn_decode_tag {
 }
 
 
-sub asn_decode_tag2 {
-  return unless length $_[0];
-
-  my $tag = unpack("C",$_[0]);
-  my $num = $tag & 0x1f;
-  my $len = 1;
-
-  if($num == 0x1f) {
-    $num = 0;
-    my $b;
-    do {
-      return if $len >= length $_[0];
-      $b = unpack("C",substr($_[0],$len++,1));
-      $num = ($num << 7) + ($b & 0x7f);
-    } while($b & 0x80);
-  }
-  ($len, $tag, $num);
-}
 
 
 ##
@@ -360,11 +638,12 @@ sub asn_decode_tag2 {
 # How many bytes are needed to encode a number 
 
 sub num_length {
+    blerg "sub num_length";
   $_[0] >> 8
     ? $_[0] >> 16
       ? $_[0] >> 24
-	? 4
-	: 3
+    ? 4
+    : 3
       : 2
     : 1
 }
@@ -372,8 +651,8 @@ sub num_length {
 # Convert from a bigint to an octet string
 
 sub i2osp {
+    blerg "sub i2osp";
     my($num, $biclass) = @_;
-    eval "use $biclass";
     $num = $biclass->new($num);
     my $neg = $num < 0
       and $num = abs($num+1);
@@ -391,8 +670,9 @@ sub i2osp {
 # Convert from an octet string to a bigint
 
 sub os2ip {
+    blerg "sub os2ip";
     my($os, $biclass) = @_;
-    eval "require $biclass";
+    # eval "require $biclass";
     my $base = $biclass->new(256);
     my $result = $biclass->new(0);
     my $neg = unpack("C",$os) >= 0x80
@@ -411,6 +691,7 @@ sub os2ip {
 # means the max tag we can do is 0x1fffff
 
 sub asn_tag {
+    blerg "sub asn_tag";
   my($class,$value) = @_;
 
   die sprintf "Bad tag class 0x%x",$class
@@ -430,28 +711,7 @@ sub asn_tag {
   unpack("V",pack("C4",$class,@t,0,0));
 }
 
-sub AUTOLOAD {
-  require Convert::ASN1::Debug if $AUTOLOAD =~ /dump/;
-  goto &{$AUTOLOAD} if defined &{$AUTOLOAD};
-  use Carp;
-  my $pkg = ref($_[0]) || ($_[0] =~ /^[\w\d]+(?:::[\w\d]+)*$/)[0];
-  if ($pkg and UNIVERSAL::isa($pkg, __PACKAGE__)) { # guess it was a method call
-    $AUTOLOAD =~ s/.*:://;
-    Carp::croak(sprintf q{Can't locate object method "%s" via package "%s"},$AUTOLOAD,$pkg);
-  }
-  else {
-    Carp::croak(sprintf q{Undefined subroutine &%s called}, $AUTOLOAD);
-  }
-}
-
-sub DESTROY {}
-
 sub error { $_[0]->{error} }
-
-
-BEGIN {
-    eval { require bytes } and 'bytes'->import
-}
 
 # These are the subs which do the encoding, they are called with
 # 0      1    2       3     4     5
@@ -481,6 +741,7 @@ my @encode = (
 
 
 sub _encode {
+    blerg "sub _encode";
   my ($optn, $ops, $stash, $path) = @_;
   my $var;
 
@@ -491,7 +752,7 @@ sub _encode {
     }
     if (defined($var = $op->[cVAR])) {
       push @$path, $var;
-      require Carp, Carp::croak(join(".", @$path)," is undefined")  unless defined $stash->{$var};
+      croak(join(".", @$path)," is undefined")  unless defined $stash->{$var};
     }
     $_[4] .= $op->[cTAG];
 
@@ -499,8 +760,8 @@ sub _encode {
       $optn,
       $op,
       (UNIVERSAL::isa($stash, 'HASH')
-	? ($stash, defined($var) ? $stash->{$var} : undef)
-	: ({}, $stash)),
+    ? ($stash, defined($var) ? $stash->{$var} : undef)
+    : ({}, $stash)),
       $_[4],
       $op->[cLOOP],
       $path,
@@ -514,6 +775,7 @@ sub _encode {
 
 
 sub _enc_boolean {
+    blerg "sub _enc_boolean";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
 
@@ -522,6 +784,7 @@ sub _enc_boolean {
 
 
 sub _enc_integer {
+    blerg "sub _enc_integer";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
   if (abs($_[3]) >= 2**31) {
@@ -547,11 +810,12 @@ sub _enc_integer {
 
 
 sub _enc_bitstring {
+    blerg "sub _enc_bitstring";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
   my $vref = ref($_[3]) ? \($_[3]->[0]) : \$_[3];
 
-  if (CHECK_UTF8 and Encode::is_utf8($$vref)) {
+  if (1 and Encode::is_utf8($$vref)) {
     utf8::encode(my $tmp = $$vref);
     $vref = \$tmp;
   }
@@ -575,10 +839,11 @@ sub _enc_bitstring {
 
 
 sub _enc_string {
+    blerg "sub _enc_string";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
 
-  if (CHECK_UTF8 and Encode::is_utf8($_[3])) {
+  if (1 and Encode::is_utf8($_[3])) {
     utf8::encode(my $tmp = $_[3]);
     $_[4] .= asn_encode_length(length $tmp);
     $_[4] .= $tmp;
@@ -591,6 +856,7 @@ sub _enc_string {
 
 
 sub _enc_null {
+    blerg "sub _enc_null";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
 
@@ -599,6 +865,7 @@ sub _enc_null {
 
 
 sub _enc_object_id {
+    blerg "sub _enc_object_id";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
 
@@ -621,6 +888,7 @@ sub _enc_object_id {
 
 
 sub _enc_real {
+    blerg "sub _enc_real";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
 
@@ -688,6 +956,7 @@ sub _enc_real {
 
 
 sub _enc_sequence {
+    blerg "sub _enc_sequence";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
 
@@ -703,18 +972,18 @@ sub _enc_sequence {
       push @{$_[6]}, -1;
 
       foreach my $var (@{$_[3]}) {
-	$_[6]->[-1]++;
-	$_[4] .= $tag;
+    $_[6]->[-1]++;
+    $_[4] .= $tag;
 
-	&{$enc}(
-	  $_[0], # $optn
-	  $op,   # $op
-	  $_[2], # $stash
-	  $var,  # $var
-	  $_[4], # $buf
-	  $loop, # $loop
-	  $_[6], # $path
-	);
+    &{$enc}(
+      $_[0], # $optn
+      $op,   # $op
+      $_[2], # $stash
+      $var,  # $var
+      $_[4], # $buf
+      $loop, # $loop
+      $_[6], # $path
+    );
       }
       pop @{$_[6]};
     }
@@ -733,6 +1002,7 @@ sub _enc_sequence {
 my %_enc_time_opt = ( utctime => 1, withzone => 0, raw => 2);
 
 sub _enc_time {
+    blerg "sub _enc_time";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
 
@@ -785,10 +1055,11 @@ sub _enc_time {
 
 
 sub _enc_utf8 {
+    blerg "sub _enc_utf8";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
 
-  if (CHECK_UTF8) {
+  if (1) {
     my $tmp = $_[3];
     utf8::upgrade($tmp) unless Encode::is_utf8($tmp);
     utf8::encode($tmp);
@@ -803,6 +1074,7 @@ sub _enc_utf8 {
 
 
 sub _enc_any {
+    blerg "sub _enc_any";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
 
@@ -820,6 +1092,7 @@ sub _enc_any {
 
 
 sub _enc_choice {
+    blerg "sub _enc_choice";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
 
@@ -835,12 +1108,12 @@ sub _enc_choice {
       return;
     }
   }
-  require Carp;
-  Carp::croak("No value found for CHOICE " . join(".", @{$_[6]}));
+  croak("No value found for CHOICE " . join(".", @{$_[6]}));
 }
 
 
 sub _enc_bcd {
+    blerg "_enc_bcd";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
   my $str = ("$_[3]" =~ /^(\d+)/) ? $1 : "";
@@ -849,14 +1122,10 @@ sub _enc_bcd {
   $_[4] .= pack("H*", $str);
 }
 
-use Socket;
 
-BEGIN {
-  local $SIG{__DIE__};
-  eval { require bytes } and 'bytes'->import
-}
 
 sub asn_recv { # $socket, $buffer, $flags
+    blerg "asn_recv";
 
   my $peer;
   my $buf;
@@ -876,15 +1145,15 @@ sub asn_recv { # $socket, $buffer, $flags
     if ($depth) { # Are we searching of "\0\0"
 
       unless (2+$pos <= length $buf) {
-	next MORE if $n == length $buf;
-	last MORE;
+    next MORE if $n == length $buf;
+    last MORE;
       }
 
       if(substr($buf,$pos,2) eq "\0\0") {
-	unless (--$depth) {
-	  $len = $pos + 2;
-	  last MORE;
-	}
+    unless (--$depth) {
+      $len = $pos + 2;
+      last MORE;
+    }
       }
     }
 
@@ -906,12 +1175,12 @@ sub asn_recv { # $socket, $buffer, $flags
 
     if ($lb) {
       if ($depth) {
-	$pos += $tb + $lb + $len;
-	redo MORE;
+    $pos += $tb + $lb + $len;
+    redo MORE;
       }
       else {
-	$len += $tb + $lb + $pos;
-	last MORE;
+    $len += $tb + $lb + $pos;
+    last MORE;
       }
     }
   }
@@ -920,12 +1189,12 @@ sub asn_recv { # $socket, $buffer, $flags
     if ($len > length $buf) {
       # Check we can read the whole element
       goto error
-	unless defined($peer = recv($_[0],$buf,$len,MSG_PEEK));
+    unless defined($peer = recv($_[0],$buf,$len,MSG_PEEK));
 
       if ($len > length $buf) {
-	# Cannot get whole element
-	$_[1]='';
-	return $peer;
+    # Cannot get whole element
+    $_[1]='';
+    return $peer;
       }
     }
     elsif ($len == 0) {
@@ -948,6 +1217,7 @@ error:
 }
 
 sub asn_read { # $fh, $buffer, $offset
+    blerg "sub asn_read";
 
   # We need to read one packet, and exactly only one packet.
   # So we have to read the first few bytes one at a time, until
@@ -956,8 +1226,7 @@ sub asn_read { # $fh, $buffer, $offset
 
   if ($_[2]) {
     if ($_[2] > length $_[1]) {
-      require Carp;
-      Carp::carp("Offset beyond end of buffer");
+      ::carp("Offset beyond end of buffer");
       return;
     }
     substr($_[1],$_[2]) = '';
@@ -979,7 +1248,7 @@ sub asn_read { # $fh, $buffer, $offset
 
     while(($n = $need - length $_[1]) > 0) {
       $e = sysread($_[0],$_[1],$n,length $_[1]) or
-	goto READ_ERR;
+    goto READ_ERR;
     }
 
     my $tch = unpack("C",substr($_[1],$pos++,1));
@@ -988,11 +1257,11 @@ sub asn_read { # $fh, $buffer, $offset
       my $ch;
       do {
         $need++;
-	while(($n = $need - length $_[1]) > 0) {
-	  $e = sysread($_[0],$_[1],$n,length $_[1]) or
-	      goto READ_ERR;
-	}
-	$ch = unpack("C",substr($_[1],$pos++,1));
+    while(($n = $need - length $_[1]) > 0) {
+      $e = sysread($_[0],$_[1],$n,length $_[1]) or
+          goto READ_ERR;
+    }
+    $ch = unpack("C",substr($_[1],$pos++,1));
       } while($ch & 0x80);
     }
 
@@ -1000,21 +1269,21 @@ sub asn_read { # $fh, $buffer, $offset
 
     while(($n = $need - length $_[1]) > 0) {
       $e = sysread($_[0],$_[1],$n,length $_[1]) or
-	  goto READ_ERR;
+      goto READ_ERR;
     }
 
     my $len = unpack("C",substr($_[1],$pos++,1));
 
     if($len & 0x80) {
       unless ($len &= 0x7f) {
-	$depth++;
-	next;
+    $depth++;
+    next;
       }
       $need = $pos + $len;
 
       while(($n = $need - length $_[1]) > 0) {
-	$e = sysread($_[0],$_[1],$n,length $_[1]) or
-	    goto READ_ERR;
+    $e = sysread($_[0],$_[1],$n,length $_[1]) or
+        goto READ_ERR;
       }
 
       $pos += $len + unpack("N", "\0" x (4 - $len) . substr($_[1],$pos,$len));
@@ -1022,7 +1291,7 @@ sub asn_read { # $fh, $buffer, $offset
     elsif (!$len && !$tch) {
       die "Bad ASN PDU" unless $depth;
       unless (--$depth) {
-	last;
+    last;
       }
     }
     else {
@@ -1045,6 +1314,7 @@ READ_ERR:
 }
 
 sub asn_send { # $sock, $buffer, $flags, $to
+    blerg "sub asn_send";
 
   @_ == 4
     ? send($_[0],$_[1],$_[2],$_[3])
@@ -1052,11 +1322,13 @@ sub asn_send { # $sock, $buffer, $flags, $to
 }
 
 sub asn_write { # $sock, $buffer
+    blerg "sub asn_write";
 
   syswrite($_[0],$_[1], length $_[1]);
 }
 
 sub asn_get { # $fh
+    blerg "sub asn_get";
 
   my $fh = ref($_[0]) ? $_[0] : \($_[0]);
   my $href = \%{*$fh};
@@ -1085,6 +1357,7 @@ sub asn_get { # $fh
 }
 
 sub asn_ready { # $fh
+    blerg "sub asn_ready";
 
   my $fh = ref($_[0]) ? $_[0] : \($_[0]);
   my $href = \%{*$fh};
@@ -1100,15 +1373,6 @@ sub asn_ready { # $fh
   $href->{'asn_need'} = $tb + $lb + $len;
 
   $href->{'asn_need'} <= length $href->{'asn_buffer'};
-}
-
-1;
-1;
-
-
-BEGIN {
-  local $SIG{__DIE__};
-  eval { require bytes and 'bytes'->import };
 }
 
 # These are the subs that do the decode, they are called with
@@ -1142,6 +1406,7 @@ my @ctr;
 
 
 sub _decode {
+    blerg "sub _decode";
   my ($optn, $ops, $stash, $pos, $end, $seqof, $larr) = @_;
   my $idx = 0;
 
@@ -1153,75 +1418,75 @@ sub _decode {
 
       if (length $op->[cTAG]) {
 
-	TAGLOOP: {
-	  my($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
-	    or do {
-	      next OP if $pos==$end and ($seqof || defined $op->[cEXT]);
-	      die "decode error";
-	    };
+    TAGLOOP: {
+      my($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
+        or do {
+          next OP if $pos==$end and ($seqof || defined $op->[cEXT]);
+          die "decode error";
+        };
 
-	  if ($tag eq $op->[cTAG]) {
+      if ($tag eq $op->[cTAG]) {
 
-	    &{$decode[$op->[cTYPE]]}(
-	      $optn,
-	      $op,
-	      $stash,
-	      # We send 1 if there is not var as if there is the decode
-	      # should be getting undef. So if it does not get undef
-	      # it knows it has no variable
-	      ($seqof ? $seqof->[$idx++] : defined($var) ? $stash->{$var} : ref($stash) eq 'SCALAR' ? $$stash : 1),
-	      $buf,$npos,$len, $larr
-	    );
+        &{$decode[$op->[cTYPE]]}(
+          $optn,
+          $op,
+          $stash,
+          # We send 1 if there is not var as if there is the decode
+          # should be getting undef. So if it does not get undef
+          # it knows it has no variable
+          ($seqof ? $seqof->[$idx++] : defined($var) ? $stash->{$var} : ref($stash) eq 'SCALAR' ? $$stash : 1),
+          $buf,$npos,$len, $larr
+        );
 
-	    $pos = $npos+$len+$indef;
+        $pos = $npos+$len+$indef;
 
-	    redo TAGLOOP if $seqof && $pos < $end;
-	    next OP;
-	  }
+        redo TAGLOOP if $seqof && $pos < $end;
+        next OP;
+      }
 
-	  if ($tag eq ($op->[cTAG] | pack("C",ASN_CONSTRUCTOR))
-	      and my $ctr = $ctr[$op->[cTYPE]]) 
-	  {
-	    _decode(
-	      $optn,
-	      [$op],
-	      undef,
-	      $npos,
-	      $npos+$len,
-	      (\my @ctrlist),
-	      $larr,
-	      $buf,
-	    );
+      if ($tag eq ($op->[cTAG] | pack("C",ASN_CONSTRUCTOR))
+          and my $ctr = $ctr[$op->[cTYPE]]) 
+      {
+        _decode(
+          $optn,
+          [$op],
+          undef,
+          $npos,
+          $npos+$len,
+          (\my @ctrlist),
+          $larr,
+          $buf,
+        );
 
-	    ($seqof ? $seqof->[$idx++] : defined($var) ? $stash->{$var} : ref($stash) eq 'SCALAR' ? $$stash : undef)
-		= &{$ctr}(@ctrlist);
-	    $pos = $npos+$len+$indef;
+        ($seqof ? $seqof->[$idx++] : defined($var) ? $stash->{$var} : ref($stash) eq 'SCALAR' ? $$stash : undef)
+        = &{$ctr}(@ctrlist);
+        $pos = $npos+$len+$indef;
 
-	    redo TAGLOOP if $seqof && $pos < $end;
-	    next OP;
+        redo TAGLOOP if $seqof && $pos < $end;
+        next OP;
 
-	  }
+      }
 
-	  if ($seqof || defined $op->[cEXT]) {
-	    next OP;
-	  }
+      if ($seqof || defined $op->[cEXT]) {
+        next OP;
+      }
 
-	  die "decode error " . unpack("H*",$tag) ."<=>" . unpack("H*",$op->[cTAG]), " ",$pos," ",$op->[cTYPE]," ",$op->[cVAR]||'';
+      die "decode error " . unpack("H*",$tag) ."<=>" . unpack("H*",$op->[cTAG]), " ",$pos," ",$op->[cTYPE]," ",$op->[cVAR]||'';
         }
       }
       else { # opTag length is zero, so it must be an ANY, CHOICE or EXTENSIONS
-	
-	if ($op->[cTYPE] == opANY) {
+    
+    if ($op->[cTYPE] == opANY) {
 
-	  ANYLOOP: {
+      ANYLOOP: {
 
-	    my($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
-	      or do {
-		next OP if $pos==$end and ($seqof || defined $op->[cEXT]);
-		die "decode error";
-	      };
+        my($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
+          or do {
+        next OP if $pos==$end and ($seqof || defined $op->[cEXT]);
+        die "decode error";
+          };
 
-	    $len += $npos - $pos + $indef;
+        $len += $npos - $pos + $indef;
 
             my $handler;
             if ($op->[cDEFINE]) {
@@ -1229,127 +1494,127 @@ sub _decode {
               $handler ||= $optn->{handlers}{$op->[cVAR]}{$stash->{$op->[cDEFINE]}};
             }
 
-	    ($seqof ? $seqof->[$idx++] : ref($stash) eq 'SCALAR' ? $$stash : $stash->{$var})
-	      = $handler ? $handler->decode(substr($buf,$pos,$len)) : substr($buf,$pos,$len);
+        ($seqof ? $seqof->[$idx++] : ref($stash) eq 'SCALAR' ? $$stash : $stash->{$var})
+          = $handler ? $handler->decode(substr($buf,$pos,$len)) : substr($buf,$pos,$len);
 
-	    $pos += $len;
+        $pos += $len;
 
-	    redo ANYLOOP if $seqof && $pos < $end;
-	  }
-	}
-	elsif ($op->[cTYPE] == opCHOICE) {
+        redo ANYLOOP if $seqof && $pos < $end;
+      }
+    }
+    elsif ($op->[cTYPE] == opCHOICE) {
 
-	  CHOICELOOP: {
-	    my($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
-	      or do {
-		next OP if $pos==$end and ($seqof || defined $op->[cEXT]);
-		die "decode error";
-	      };
-	    my $extensions;
-	    foreach my $cop (@{$op->[cCHILD]}) {
+      CHOICELOOP: {
+        my($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
+          or do {
+        next OP if $pos==$end and ($seqof || defined $op->[cEXT]);
+        die "decode error";
+          };
+        my $extensions;
+        foreach my $cop (@{$op->[cCHILD]}) {
 
-	      if ($tag eq $cop->[cTAG]) {
+          if ($tag eq $cop->[cTAG]) {
 
-		my $nstash = $seqof
-			? ($seqof->[$idx++]={})
-			: defined($var)
-				? ($stash->{$var}={})
-				: ref($stash) eq 'SCALAR'
-					? ($$stash={}) : $stash;
+        my $nstash = $seqof
+            ? ($seqof->[$idx++]={})
+            : defined($var)
+                ? ($stash->{$var}={})
+                : ref($stash) eq 'SCALAR'
+                    ? ($$stash={}) : $stash;
 
-		&{$decode[$cop->[cTYPE]]}(
-		  $optn,
-		  $cop,
-		  $nstash,
-		  ($cop->[cVAR] ? $nstash->{$cop->[cVAR]} : undef),
-		  $buf,$npos,$len,$larr,
-		);
+        &{$decode[$cop->[cTYPE]]}(
+          $optn,
+          $cop,
+          $nstash,
+          ($cop->[cVAR] ? $nstash->{$cop->[cVAR]} : undef),
+          $buf,$npos,$len,$larr,
+        );
 
-		$pos = $npos+$len+$indef;
+        $pos = $npos+$len+$indef;
 
-		redo CHOICELOOP if $seqof && $pos < $end;
-		next OP;
-	      }
+        redo CHOICELOOP if $seqof && $pos < $end;
+        next OP;
+          }
 
-	      if ($cop->[cTYPE] == opEXTENSIONS) {
-		$extensions = 1;
-		next;
-	      }
+          if ($cop->[cTYPE] == opEXTENSIONS) {
+        $extensions = 1;
+        next;
+          }
 
-	      unless (length $cop->[cTAG]) {
-		eval {
-		  _decode(
-		    $optn,
-		    [$cop],
-		    (\my %tmp_stash),
-		    $pos,
-		    $npos+$len+$indef,
-		    undef,
-		    $larr,
-		    $buf,
-		  );
+          unless (length $cop->[cTAG]) {
+        eval {
+          _decode(
+            $optn,
+            [$cop],
+            (\my %tmp_stash),
+            $pos,
+            $npos+$len+$indef,
+            undef,
+            $larr,
+            $buf,
+          );
 
-		  my $nstash = $seqof
-			  ? ($seqof->[$idx++]={})
-			  : defined($var)
-				  ? ($stash->{$var}={})
-				  : ref($stash) eq 'SCALAR'
-					  ? ($$stash={}) : $stash;
+          my $nstash = $seqof
+              ? ($seqof->[$idx++]={})
+              : defined($var)
+                  ? ($stash->{$var}={})
+                  : ref($stash) eq 'SCALAR'
+                      ? ($$stash={}) : $stash;
 
-		  @{$nstash}{keys %tmp_stash} = values %tmp_stash;
+          @{$nstash}{keys %tmp_stash} = values %tmp_stash;
 
-		} or next;
+        } or next;
 
-		$pos = $npos+$len+$indef;
+        $pos = $npos+$len+$indef;
 
-		redo CHOICELOOP if $seqof && $pos < $end;
-		next OP;
-	      }
+        redo CHOICELOOP if $seqof && $pos < $end;
+        next OP;
+          }
 
-	      if ($tag eq ($cop->[cTAG] | pack("C",ASN_CONSTRUCTOR))
-		  and my $ctr = $ctr[$cop->[cTYPE]]) 
-	      {
-		my $nstash = $seqof
-			? ($seqof->[$idx++]={})
-			: defined($var)
-				? ($stash->{$var}={})
-				: ref($stash) eq 'SCALAR'
-					? ($$stash={}) : $stash;
+          if ($tag eq ($cop->[cTAG] | pack("C",ASN_CONSTRUCTOR))
+          and my $ctr = $ctr[$cop->[cTYPE]]) 
+          {
+        my $nstash = $seqof
+            ? ($seqof->[$idx++]={})
+            : defined($var)
+                ? ($stash->{$var}={})
+                : ref($stash) eq 'SCALAR'
+                    ? ($$stash={}) : $stash;
 
-		_decode(
-		  $optn,
-		  [$cop],
-		  undef,
-		  $npos,
-		  $npos+$len,
-		  (\my @ctrlist),
-		  $larr,
-		  $buf,
-		);
+        _decode(
+          $optn,
+          [$cop],
+          undef,
+          $npos,
+          $npos+$len,
+          (\my @ctrlist),
+          $larr,
+          $buf,
+        );
 
-		$nstash->{$cop->[cVAR]} = &{$ctr}(@ctrlist);
-		$pos = $npos+$len+$indef;
+        $nstash->{$cop->[cVAR]} = &{$ctr}(@ctrlist);
+        $pos = $npos+$len+$indef;
 
-		redo CHOICELOOP if $seqof && $pos < $end;
-		next OP;
-	      }
-	    }
-
-	    if ($pos < $end && $extensions) {
-	      $pos = $npos+$len+$indef;
-
-	      redo CHOICELOOP if $seqof && $pos < $end;
-	      next OP;
-	    }
-	  }
-	  die "decode error" unless $op->[cEXT];
-	}
-	elsif ($op->[cTYPE] == opEXTENSIONS) {
-	    $pos = $end; # Skip over the rest
+        redo CHOICELOOP if $seqof && $pos < $end;
+        next OP;
+          }
         }
-	else {
-	  die "this point should never be reached";
-	}
+
+        if ($pos < $end && $extensions) {
+          $pos = $npos+$len+$indef;
+
+          redo CHOICELOOP if $seqof && $pos < $end;
+          next OP;
+        }
+      }
+      die "decode error" unless $op->[cEXT];
+    }
+    elsif ($op->[cTYPE] == opEXTENSIONS) {
+        $pos = $end; # Skip over the rest
+        }
+    else {
+      die "this point should never be reached";
+    }
       }
     }
   }
@@ -1358,6 +1623,7 @@ sub _decode {
 
 
 sub _dec_boolean {
+    blerg "sub _dec_boolean";
 # 0      1    2       3     4     5     6
 # $optn, $op, $stash, $var, $buf, $pos, $len
 
@@ -1367,6 +1633,7 @@ sub _dec_boolean {
 
 
 sub _dec_integer {
+    blerg "sub _dec_integer";
 # 0      1    2       3     4     5     6
 # $optn, $op, $stash, $var, $buf, $pos, $len
 
@@ -1383,6 +1650,7 @@ sub _dec_integer {
 
 
 sub _dec_bitstring {
+    blerg "sub _dec_bitstring";
 # 0      1    2       3     4     5     6
 # $optn, $op, $stash, $var, $buf, $pos, $len
 
@@ -1392,6 +1660,7 @@ sub _dec_bitstring {
 
 
 sub _dec_string {
+    blerg "sub _dec_string";
 # 0      1    2       3     4     5     6
 # $optn, $op, $stash, $var, $buf, $pos, $len
 
@@ -1401,6 +1670,7 @@ sub _dec_string {
 
 
 sub _dec_null {
+    blerg "sub _dec_null";
 # 0      1    2       3     4     5     6
 # $optn, $op, $stash, $var, $buf, $pos, $len
 
@@ -1410,6 +1680,7 @@ sub _dec_null {
 
 
 sub _dec_object_id {
+    blerg "sub _dec_object_id";
 # 0      1    2       3     4     5     6
 # $optn, $op, $stash, $var, $buf, $pos, $len
 
@@ -1430,9 +1701,9 @@ sub _dec_object_id {
 }
 
 
-my @_dec_real_base = (2,8,16);
 
 sub _dec_real {
+    blerg "sub _dec_real";
 # 0      1    2       3     4     5     6
 # $optn, $op, $stash, $var, $buf, $pos, $len
 
@@ -1482,6 +1753,7 @@ sub _dec_real {
 
 
 sub _dec_explicit {
+    blerg "sub _dec_explicit";
 # 0      1    2       3     4     5     6     7
 # $optn, $op, $stash, $var, $buf, $pos, $len, $larr
 
@@ -1500,6 +1772,7 @@ sub _dec_explicit {
   1;
 }
 sub _dec_sequence {
+    blerg "sub _dec_sequence";
 # 0      1    2       3     4     5     6     7
 # $optn, $op, $stash, $var, $buf, $pos, $len, $larr
 
@@ -1523,6 +1796,7 @@ sub _dec_sequence {
 
 
 sub _dec_set {
+    blerg "sub _dec_set";
 # 0      1    2       3     4     5     6     7
 # $optn, $op, $stash, $var, $buf, $pos, $len, $larr
 
@@ -1546,88 +1820,88 @@ SET_OP:
     foreach my $op (@$ch) {
       $idx++;
       if (length($op->[cTAG])) {
-	if ($tag eq $op->[cTAG]) {
-	  my $var = $op->[cVAR];
-	  &{$decode[$op->[cTYPE]]}(
-	    $optn,
-	    $op,
-	    $stash,
-	    # We send 1 if there is not var as if there is the decode
-	    # should be getting undef. So if it does not get undef
-	    # it knows it has no variable
-	    (defined($var) ? $stash->{$var} : 1),
-	    $_[4],$npos,$len,$larr,
-	  );
-	  $done = $idx;
-	  last SET_OP;
-	}
-	if ($tag eq ($op->[cTAG] | pack("C",ASN_CONSTRUCTOR))
-	    and my $ctr = $ctr[$op->[cTYPE]]) 
-	{
-	  _decode(
-	    $optn,
-	    [$op],
-	    undef,
-	    $npos,
-	    $npos+$len,
-	    (\my @ctrlist),
-	    $larr,
-	    $_[4],
-	  );
+    if ($tag eq $op->[cTAG]) {
+      my $var = $op->[cVAR];
+      &{$decode[$op->[cTYPE]]}(
+        $optn,
+        $op,
+        $stash,
+        # We send 1 if there is not var as if there is the decode
+        # should be getting undef. So if it does not get undef
+        # it knows it has no variable
+        (defined($var) ? $stash->{$var} : 1),
+        $_[4],$npos,$len,$larr,
+      );
+      $done = $idx;
+      last SET_OP;
+    }
+    if ($tag eq ($op->[cTAG] | pack("C",ASN_CONSTRUCTOR))
+        and my $ctr = $ctr[$op->[cTYPE]]) 
+    {
+      _decode(
+        $optn,
+        [$op],
+        undef,
+        $npos,
+        $npos+$len,
+        (\my @ctrlist),
+        $larr,
+        $_[4],
+      );
 
-	  $stash->{$op->[cVAR]} = &{$ctr}(@ctrlist)
-	    if defined $op->[cVAR];
-	  $done = $idx;
-	  last SET_OP;
-	}
-	next SET_OP;
+      $stash->{$op->[cVAR]} = &{$ctr}(@ctrlist)
+        if defined $op->[cVAR];
+      $done = $idx;
+      last SET_OP;
+    }
+    next SET_OP;
       }
       elsif ($op->[cTYPE] == opANY) {
-	$any = $idx;
+    $any = $idx;
       }
       elsif ($op->[cTYPE] == opCHOICE) {
-	my $var = $op->[cVAR];
-	foreach my $cop (@{$op->[cCHILD]}) {
-	  if ($tag eq $cop->[cTAG]) {
-	    my $nstash = defined($var) ? ($stash->{$var}={}) : $stash;
+    my $var = $op->[cVAR];
+    foreach my $cop (@{$op->[cCHILD]}) {
+      if ($tag eq $cop->[cTAG]) {
+        my $nstash = defined($var) ? ($stash->{$var}={}) : $stash;
 
-	    &{$decode[$cop->[cTYPE]]}(
-	      $optn,
-	      $cop,
-	      $nstash,
-	      $nstash->{$cop->[cVAR]},
-	      $_[4],$npos,$len,$larr,
-	    );
-	    $done = $idx;
-	    last SET_OP;
-	  }
-	  if ($tag eq ($cop->[cTAG] | pack("C",ASN_CONSTRUCTOR))
-	      and my $ctr = $ctr[$cop->[cTYPE]]) 
-	  {
-	    my $nstash = defined($var) ? ($stash->{$var}={}) : $stash;
+        &{$decode[$cop->[cTYPE]]}(
+          $optn,
+          $cop,
+          $nstash,
+          $nstash->{$cop->[cVAR]},
+          $_[4],$npos,$len,$larr,
+        );
+        $done = $idx;
+        last SET_OP;
+      }
+      if ($tag eq ($cop->[cTAG] | pack("C",ASN_CONSTRUCTOR))
+          and my $ctr = $ctr[$cop->[cTYPE]]) 
+      {
+        my $nstash = defined($var) ? ($stash->{$var}={}) : $stash;
 
-	    _decode(
-	      $optn,
-	      [$cop],
-	      undef,
-	      $npos,
-	      $npos+$len,
-	      (\my @ctrlist),
-	      $larr,
-	      $_[4],
-	    );
+        _decode(
+          $optn,
+          [$cop],
+          undef,
+          $npos,
+          $npos+$len,
+          (\my @ctrlist),
+          $larr,
+          $_[4],
+        );
 
-	    $nstash->{$cop->[cVAR]} = &{$ctr}(@ctrlist);
-	    $done = $idx;
-	    last SET_OP;
-	  }
-	}
+        $nstash->{$cop->[cVAR]} = &{$ctr}(@ctrlist);
+        $done = $idx;
+        last SET_OP;
+      }
+    }
       }
       elsif ($op->[cTYPE] == opEXTENSIONS) {
-	  $extensions = $idx;
+      $extensions = $idx;
       }
       else {
-	die "internal error";
+    die "internal error";
       }
     }
 
@@ -1659,6 +1933,7 @@ SET_OP:
 my %_dec_time_opt = ( unixtime => 0, withzone => 1, raw => 2);
 
 sub _dec_time {
+    blerg "sub _dec_time";
 # 0      1    2       3     4     5     6
 # $optn, $op, $stash, $var, $buf, $pos, $len
 
@@ -1694,29 +1969,15 @@ sub _dec_time {
 
 
 sub _dec_utf8 {
+    blerg "sub _dec_utf8";
 # 0      1    2       3     4     5     6
 # $optn, $op, $stash, $var, $buf, $pos, $len
-
-  BEGIN {
-    unless (CHECK_UTF8) {
-      local $SIG{__DIE__};
-      eval { require bytes } and 'bytes'->unimport;
-      eval { require utf8  } and 'utf8'->import;
-    }
-  }
-
-  if (CHECK_UTF8) {
-    $_[3] = Encode::decode('utf8', substr($_[4],$_[5],$_[6]));
-  }
-  else {
-    $_[3] = (substr($_[4],$_[5],$_[6]) =~ /(.*)/s)[0];
-  }
-
-  1;
+  $_[3] = Encode::decode('utf8', substr($_[4],$_[5],$_[6]));
 }
 
 
 sub _decode_tl {
+    blerg "sub _decode_tl";
   my($pos,$end,$larr) = @_[1,2,3];
 
   return if $pos >= $end;
@@ -1765,6 +2026,7 @@ sub _decode_tl {
 }
 
 sub _scan_indef {
+    blerg "sub _scan_indef";
   my($pos,$end,$larr) = @_[1,2,3];
   my @depth = ( $pos );
 
@@ -1785,8 +2047,8 @@ sub _scan_indef {
     if((unpack("C",$tag) & 0x1f) == 0x1f) {
       my $b;
       do {
-	$tag .= substr($_[0],$pos++,1);
-	$b = ord substr($tag,-1);
+    $tag .= substr($_[0],$pos++,1);
+    $b = ord substr($tag,-1);
       } while($b & 0x80);
     }
     return if $pos >= $end;
@@ -1795,10 +2057,10 @@ sub _scan_indef {
 
     if($len & 0x80) {
       if ($len &= 0x7f) {
-	return if $pos+$len > $end ;
+    return if $pos+$len > $end ;
 
-	my $padding = $len < 4 ? "\0" x (4 - $len) : "";
-	$pos += $len + unpack("N", $padding . substr($_[0],$pos,$len));
+    my $padding = $len < 4 ? "\0" x (4 - $len) : "";
+    $pos += $len + unpack("N", $padding . substr($_[0],$pos,$len));
       }
       else {
         # reserve another list element
@@ -1813,301 +2075,29 @@ sub _scan_indef {
   1;
 }
 
-sub _ctr_string { join '', @_ }
-
-sub _ctr_bitstring {
-  [ join('', map { $_->[0] } @_), $_[-1]->[1] ]
-}
+sub _ctr_string { blerg "sub _ctr_string"; join '', @_ }
 
 sub _dec_bcd {
+    blerg "sub _dec_bcd";
 # 0      1    2       3     4     5     6
 # $optn, $op, $stash, $var, $buf, $pos, $len
 
   ($_[3] = unpack("H*", substr($_[4],$_[5],$_[6]))) =~ s/[fF]$//;
   1;
 }
-1;
 
 
-##
-## just for debug :-)
-##
 
-sub _hexdump {
-  my($fmt,$pos) = @_[1,2]; # Don't copy buffer
-
-  $pos ||= 0;
-
-  my $offset  = 0;
-  my $cnt     = 1 << 4;
-  my $len     = length($_[0]);
-  my $linefmt = ("%02X " x $cnt) . "%s\n";
-
-  print "\n";
-
-  while ($offset < $len) {
-    my $data = substr($_[0],$offset,$cnt);
-    my @y = unpack("C*",$data);
-
-    printf $fmt,$pos if $fmt;
-
-    # On the last time through replace '%02X ' with '__ ' for the
-    # missing values
-    substr($linefmt, 5*@y,5*($cnt-@y)) = "__ " x ($cnt - @y)
-	if @y != $cnt;
-
-    # Change non-printable chars to '.'
-    $data =~ s/[\x00-\x1f\x7f-\xff]/./sg;
-    printf $linefmt, @y,$data;
-
-    $offset += $cnt;
-    $pos += $cnt;
-  }
-}
-
-my %type = (
-  split(/[\t\n]\s*/,
-    q(10	SEQUENCE
-      01	BOOLEAN
-      0A	ENUM
-      0D	RELATIVE-OID
-      11	SET
-      02	INTEGER
-      03	BIT STRING
-      C0	[PRIVATE %d]
-      04	STRING
-      40	[APPLICATION %d]
-      05	NULL
-      06	OBJECT ID
-      80	[CONTEXT %d]
-    )
-  )
-);
-
-BEGIN { undef &asn_dump }
-sub asn_dump {
-  my $fh = @_>1 ? shift : \*STDERR;
-
-  my $ofh = select($fh);
-
-  my $pos = 0;
-  my $indent = "";
-  my @seqend = ();
-  my $length = length($_[0]);
-  my $fmt = $length > 0xffff ? "%08X" : "%04X";
-
-  while(1) {
-    while (@seqend && $pos >= $seqend[0]) {
-      $indent = substr($indent,2);
-      warn "Bad sequence length " unless $pos == shift @seqend;
-      printf "$fmt     : %s}\n",$pos,$indent;
-    }
-    last unless $pos < $length;
-    
-    my $start = $pos;
-    my($tb,$tag,$tnum) = asn_decode_tag2(substr($_[0],$pos,10));
-    last unless defined $tb;
-    $pos += $tb;
-    my($lb,$len) = asn_decode_length(substr($_[0],$pos,10));
-    $pos += $lb;
-
-    if($tag == 0 && $len == 0) {
-      $seqend[0] = $pos;
-      redo;
-    }
-    printf $fmt. " %4d: %s",$start,$len,$indent;
-
-    my $label = $type{sprintf("%02X",$tag & ~0x20)}
-		|| $type{sprintf("%02X",$tag & 0xC0)}
-		|| "[UNIVERSAL %d]";
-    printf $label, $tnum;
-
-    if ($tag & ASN_CONSTRUCTOR) {
-      print " {\n";
-      if($len < 0) {
-          unshift(@seqend, length $_[0]);
-      }
-      else {
-          unshift(@seqend, $pos + $len);
-      }
-      $indent .= "  ";
-      next;
-    }
-
-    my $tmp;
-
-    for ($label) { # switch
-      /^(INTEGER|ENUM)/ && do {
-	Convert::ASN1::_dec_integer({},[],{},$tmp,$_[0],$pos,$len);
-	printf " = %d\n",$tmp;
-        last;
-      };
-
-      /^BOOLEAN/ && do {
-	Convert::ASN1::_dec_boolean({},[],{},$tmp,$_[0],$pos,$len);
-	printf " = %s\n",$tmp ? 'TRUE' : 'FALSE';
-        last;
-      };
-
-      /^(?:(OBJECT ID)|(RELATIVE-OID))/ && do {
-	my @op; $op[cTYPE] = $1 ? opOBJID : opROID;
-	Convert::ASN1::_dec_object_id({},\@op,{},$tmp,$_[0],$pos,$len);
-	printf " = %s\n",$tmp;
-        last;
-      };
-
-      /^NULL/ && do {
-	print "\n";
-        last;
-      };
-
-      /^STRING/ && do {
-	Convert::ASN1::_dec_string({},[],{},$tmp,$_[0],$pos,$len);
-	if ($tmp =~ /[\x00-\x1f\x7f-\xff]/s) {
-  	  _hexdump($tmp,$fmt . "     :   ".$indent, $pos);
-	}
-	else {
-	  printf " = '%s'\n",$tmp;
-	}
-        last;
-      };
-
-#      /^BIT STRING/ && do {
-#	Convert::BER::BIT_STRING->unpack($ber,\$tmp);
-#	print " = ",$tmp,"\n";
-#        last;
-#      };
-
-      # default -- dump hex data
-      _hexdump(substr($_[0],$pos,$len),$fmt . "     :   ".$indent, $pos);
-    }
-    $pos += $len;
-  }
-  printf "Buffer contains %d extra bytes\n", $length - $pos if $pos < $length;
-
-  select($ofh);
-}
-
-BEGIN { undef &asn_hexdump }
-sub asn_hexdump {
-    my $fh = @_>1 ? shift : \*STDERR;
-    my $ofh = select($fh);
-
-    _hexdump($_[0]);
-    print "\n";
-    select($ofh);
-}
-
-BEGIN { undef &dump }
-sub dump {
-  my $self = shift;
-  
-  for (@{$self->{script}}) {
-    dump_op($_,"",{},1);
-  }
-}
-
-BEGIN { undef &dump_all }
-sub dump_all {
-  my $self = shift;
-  
-  while(my($k,$v) = each %{$self->{tree}}) {
-    print STDERR "$k:\n";
-    for (@$v) {
-      dump_op($_,"",{},1);
-    }
-  }
-}
-
-
-BEGIN { undef &dump_op }
-sub dump_op {
-  my($op,$indent,$done,$line) = @_;
-  $indent ||= "";
-  printf STDERR "%3d: ",$line;
-  if ($done->{$op}) {
-    print STDERR "    $indent=",$done->{$op},"\n";
-    return ++$line;
-  }
-  $done->{$op} = $line++;
-  print STDERR $indent,"[ '",unpack("H*",$op->[cTAG]),"', ";
-  print STDERR $op->[cTYPE] =~ /\D/ ? $op->[cTYPE] : $opName[$op->[cTYPE]];
-  print STDERR ", ",defined($op->[cVAR]) ? $op->[cVAR] : "_";
-  print STDERR ", ",defined($op->[cLOOP]) ? $op->[cLOOP] : "_";
-  print STDERR ", ",defined($op->[cOPT]) ? $op->[cOPT] : "_";
-  print STDERR "]";
-  if ($op->[cCHILD]) {
-    print STDERR " ",scalar @{$op->[cCHILD]},"\n";
-    for (@{$op->[cCHILD]}) {
-      $line = dump_op($_,$indent . " ",$done,$line);
-    }
-  }
-  else {
-    print STDERR "\n";
-  }
-  print STDERR "\n" unless length $indent;
-  $line;
-}
-
-1;
-
-BEGIN { Convert::ASN1->_internal_syms }
-
-my $yydebug=0;
-my %yystate;
-
-my %base_type = (
-  BOOLEAN	    => [ asn_encode_tag(ASN_BOOLEAN),		opBOOLEAN ],
-  INTEGER	    => [ asn_encode_tag(ASN_INTEGER),		opINTEGER ],
-  BIT_STRING	    => [ asn_encode_tag(ASN_BIT_STR),		opBITSTR  ],
-  OCTET_STRING	    => [ asn_encode_tag(ASN_OCTET_STR),		opSTRING  ],
-  STRING	    => [ asn_encode_tag(ASN_OCTET_STR),		opSTRING  ],
-  NULL 		    => [ asn_encode_tag(ASN_NULL),		opNULL    ],
-  OBJECT_IDENTIFIER => [ asn_encode_tag(ASN_OBJECT_ID),		opOBJID   ],
-  REAL		    => [ asn_encode_tag(ASN_REAL),		opREAL    ],
-  ENUMERATED	    => [ asn_encode_tag(ASN_ENUMERATED),	opINTEGER ],
-  ENUM		    => [ asn_encode_tag(ASN_ENUMERATED),	opINTEGER ],
-  'RELATIVE-OID'    => [ asn_encode_tag(ASN_RELATIVE_OID),	opROID	  ],
-
-  SEQUENCE	    => [ asn_encode_tag(ASN_SEQUENCE | ASN_CONSTRUCTOR), opSEQUENCE ],
-  EXPLICIT	    => [ asn_encode_tag(ASN_SEQUENCE | ASN_CONSTRUCTOR), opEXPLICIT ],
-  SET               => [ asn_encode_tag(ASN_SET      | ASN_CONSTRUCTOR), opSET ],
-
-  ObjectDescriptor  => [ asn_encode_tag(ASN_UNIVERSAL |  7), opSTRING ],
-  UTF8String        => [ asn_encode_tag(ASN_UNIVERSAL | 12), opUTF8 ],
-  NumericString     => [ asn_encode_tag(ASN_UNIVERSAL | 18), opSTRING ],
-  PrintableString   => [ asn_encode_tag(ASN_UNIVERSAL | 19), opSTRING ],
-  TeletexString     => [ asn_encode_tag(ASN_UNIVERSAL | 20), opSTRING ],
-  T61String         => [ asn_encode_tag(ASN_UNIVERSAL | 20), opSTRING ],
-  VideotexString    => [ asn_encode_tag(ASN_UNIVERSAL | 21), opSTRING ],
-  IA5String         => [ asn_encode_tag(ASN_UNIVERSAL | 22), opSTRING ],
-  UTCTime           => [ asn_encode_tag(ASN_UNIVERSAL | 23), opUTIME ],
-  GeneralizedTime   => [ asn_encode_tag(ASN_UNIVERSAL | 24), opGTIME ],
-  GraphicString     => [ asn_encode_tag(ASN_UNIVERSAL | 25), opSTRING ],
-  VisibleString     => [ asn_encode_tag(ASN_UNIVERSAL | 26), opSTRING ],
-  ISO646String      => [ asn_encode_tag(ASN_UNIVERSAL | 26), opSTRING ],
-  GeneralString     => [ asn_encode_tag(ASN_UNIVERSAL | 27), opSTRING ],
-  CharacterString   => [ asn_encode_tag(ASN_UNIVERSAL | 28), opSTRING ],
-  UniversalString   => [ asn_encode_tag(ASN_UNIVERSAL | 28), opSTRING ],
-  BMPString         => [ asn_encode_tag(ASN_UNIVERSAL | 30), opSTRING ],
-  BCDString         => [ asn_encode_tag(ASN_OCTET_STR), opBCD ],
-
-  CHOICE => [ '', opCHOICE ],
-  ANY    => [ '', opANY ],
-
-  EXTENSION_MARKER => [ '', opEXTENSIONS ],
-);
-
-my $tagdefault = 1; # 0:IMPLICIT , 1:EXPLICIT default
-
-;# args: class,plicit
+# args: class,plicit
 sub need_explicit {
+    blerg "sub need_explicit";
   (defined($_[0]) && (defined($_[1])?$_[1]:$tagdefault));
 }
 
-;# Given an OP, wrap it in a SEQUENCE
+# Given an OP, wrap it in a SEQUENCE
 
 sub explicit {
+    blerg "sub exlicit";
   my $op = shift;
   my @seq = @$op;
 
@@ -2117,574 +2107,388 @@ sub explicit {
   \@seq;
 }
 
-sub constWORD () { 1 }
-sub constCLASS () { 2 }
-sub constSEQUENCE () { 3 }
-sub constSET () { 4 }
-sub constCHOICE () { 5 }
-sub constOF () { 6 }
-sub constIMPLICIT () { 7 }
-sub constEXPLICIT () { 8 }
-sub constOPTIONAL () { 9 }
-sub constLBRACE () { 10 }
-sub constRBRACE () { 11 }
-sub constCOMMA () { 12 }
-sub constANY () { 13 }
-sub constASSIGN () { 14 }
-sub constNUMBER () { 15 }
-sub constENUM () { 16 }
-sub constCOMPONENTS () { 17 }
-sub constPOSTRBRACE () { 18 }
-sub constDEFINED () { 19 }
-sub constBY () { 20 }
-sub constEXTENSION_MARKER () { 21 }
-sub constYYERRCODE () { 256 }
-my @yylhs = (                                               -1,
-    0,    0,    2,    2,    3,    3,    6,    6,    6,    6,
-    8,   13,   13,   12,   14,   14,   14,    9,    9,    9,
-   10,   18,   18,   18,   18,   18,   19,   19,   11,   16,
-   16,   20,   20,   20,   21,   21,    1,    1,    1,   22,
-   22,   22,   24,   24,   24,   24,   23,   23,   23,   23,
-   15,   15,    4,    4,    5,    5,    5,   17,   17,   25,
-    7,    7,
-);
-my @yylen = (                                                2,
-    1,    1,    3,    4,    4,    1,    1,    1,    1,    1,
-    3,    1,    1,    6,    1,    1,    1,    4,    4,    4,
-    4,    1,    1,    1,    2,    1,    0,    3,    1,    1,
-    2,    1,    3,    3,    4,    1,    0,    1,    2,    1,
-    3,    3,    2,    1,    1,    1,    4,    1,    3,    1,
-    0,    1,    0,    1,    0,    1,    1,    1,    3,    2,
-    0,    1,
-);
-my @yydefred = (                                             0,
-    0,   54,    0,   50,    0,    1,    0,    0,   48,    0,
-   40,    0,    0,    0,    0,   57,   56,    0,    0,    0,
-    3,    0,    6,    0,   11,    0,    0,    0,    0,   49,
-    0,   41,   42,    0,   22,    0,    0,    0,    0,   46,
-   44,    0,   45,    0,   29,   47,    4,    0,    0,    0,
-    0,    7,    8,    9,   10,    0,   25,    0,   52,   43,
-    0,    0,    0,    0,   36,    0,    0,   32,   62,    5,
-    0,    0,    0,   58,    0,   18,   19,    0,   20,    0,
-    0,   28,   60,   21,    0,    0,    0,   34,   33,   59,
-    0,    0,   17,   15,   16,    0,   35,   14,
-);
-my @yydgoto = (                                              5,
-    6,    7,   21,    8,   18,   51,   70,    9,   52,   53,
-   54,   55,   44,   96,   60,   66,   73,   45,   57,   67,
-   68,   10,   11,   46,   74,
-);
-my @yysindex = (                                             2,
-   58,    0,    8,    0,    0,    0,   11,  123,    0,    3,
-    0,   59,  123,   19,   73,    0,    0,   92,    7,    7,
-    0,  123,    0,  119,    0,   59,  107,  109,  116,    0,
-   82,    0,    0,  119,    0,  107,  109,   84,  126,    0,
-    0,   90,    0,  132,    0,    0,    0,    7,    7,   10,
-  139,    0,    0,    0,    0,  141,    0,  143,    0,    0,
-   82,  156,  159,   82,    0,  160,    4,    0,    0,    0,
-  171,  158,    6,    0,  123,    0,    0,  123,    0,   10,
-   10,    0,    0,    0,  143,  124,  119,    0,    0,    0,
-  107,  109,    0,    0,    0,   90,    0,    0,
-);
-my @yyrindex = (                                           155,
-  105,    0,    0,    0,    0,    0,  174,  111,    0,   80,
-    0,  105,  138,    0,    0,    0,    0,    0,  161,  145,
-    0,  138,    0,    0,    0,  105,    0,    0,    0,    0,
-  105,    0,    0,    0,    0,   29,   33,   70,   74,    0,
-    0,   46,    0,    0,    0,    0,    0,   45,   45,    0,
-   54,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-  105,    0,    0,  105,    0,    0,  164,    0,    0,    0,
-    0,    0,    0,    0,  138,    0,    0,  138,    0,    0,
-  165,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-   89,   93,    0,    0,    0,   25,    0,    0,
-);
-my @yygindex = (                                             0,
-   85,    0,  151,    1,  -12,   91,    0,   47,  -18,  -19,
-  -17,  157,    0,    0,   83,    0,    0,    0,    0,    0,
-   -3,    0,  127,    0,   95,
-);
-sub constYYTABLESIZE () { 181 }
-my @yytable = (                                             30,
-   24,   13,    1,    2,   41,   40,   42,   31,    2,   34,
-   64,   15,   22,   14,   19,   80,   84,   85,    3,   25,
-   20,   81,    4,    3,   51,   51,   22,    4,   23,   23,
-   65,   13,   24,   24,   12,   51,   51,   23,   13,   23,
-   23,   24,   51,   24,   24,   51,   23,   53,   53,   53,
-   24,   53,   53,   61,   61,   37,   51,   51,   23,    2,
-    2,   75,   86,   51,   78,   87,   94,   93,   95,   27,
-   27,   12,   23,   26,   26,    3,   88,   89,   27,   38,
-   27,   27,   26,    2,   26,   26,   26,   27,   23,   23,
-   38,   26,   24,   24,   27,   28,   29,   23,   59,   23,
-   23,   24,   56,   24,   24,   53,   23,   53,   53,   53,
-   24,   53,   53,   55,   55,   55,   48,   53,   49,   35,
-   53,   36,   37,   29,   35,   50,   91,   92,   29,   16,
-   17,   38,   62,   63,   39,   58,   38,   61,   55,   39,
-   55,   55,   55,   72,   39,   32,   33,   53,   53,   53,
-   55,   53,   53,   55,   37,   39,   69,   53,   53,   53,
-   71,   53,   53,   53,   53,   53,   76,   53,   53,   77,
-   79,   82,   83,    2,   30,   31,   47,   97,   98,   90,
-   43,
-);
-my @yycheck = (                                             18,
-   13,    1,    1,    2,   24,   24,   24,    1,    2,   22,
-    1,    1,   12,    6,   12,   12,   11,   12,   17,    1,
-   18,   18,   21,   17,    0,    1,   26,   21,    0,    1,
-   21,   31,    0,    1,    6,   11,   12,    9,    6,   11,
-   12,    9,   18,   11,   12,    0,   18,    3,    4,    5,
-   18,    7,    8,    0,    1,   11,   11,   12,   12,    2,
-    2,   61,   75,   18,   64,   78,   86,   86,   86,    0,
-    1,   14,   26,    0,    1,   17,   80,   81,    9,    0,
-   11,   12,    9,    2,   11,   12,   14,   18,    0,    1,
-   11,   18,    0,    1,    3,    4,    5,    9,    9,   11,
-   12,    9,   19,   11,   12,    1,   18,    3,    4,    5,
-   18,    7,    8,    3,    4,    5,   10,   13,   10,    1,
-   16,    3,    4,    5,    1,   10,    3,    4,    5,    7,
-    8,   13,   48,   49,   16,   10,   13,    6,    1,   16,
-    3,    4,    5,    1,    0,   19,   20,    3,    4,    5,
-   13,    7,    8,   16,    0,   11,   18,    3,    4,    5,
-   20,    7,    8,    3,    4,    5,   11,    7,    8,   11,
-   11,    1,   15,    0,   11,   11,   26,   87,   96,   85,
-   24,
-);
-sub constYYFINAL () { 5 }
+sub yyparse {
+    blerg "sub yyparse";
 
+    my $yyerrflag = 0;
+    my $yychar = (-1);
+    my $yyn;
+    my $yyssp = 0;
+    my $yyvsp = 0;
 
+    my @yyss;
+    my @yyvs;
+    my $yystate = 0;
+    my $yym;
+    my $yyval;
+    $yyss[$yyssp] = $yystate;
 
-sub constYYMAXTOKEN () { 21 }
-sub yyclearin { $yychar = -1; }
-sub yyerrok { $yyerrflag = 0; }
-sub YYERROR { ++$yynerrs; &yy_err_recover; }
-sub yy_err_recover
-{
-  if ($yyerrflag < 3)
-  {
-    $yyerrflag = 3;
-    while (1)
-    {
-      if (($yyn = $yysindex[$yyss[$yyssp]]) && 
-          ($yyn += constYYERRCODE()) >= 0 && 
-          $yyn <= $#yycheck && $yycheck[$yyn] == constYYERRCODE())
-      {
+    yyloop: while(1) {
+        yyreduce: {
+            last yyreduce if ($yyn = $yydefred[$yystate]);
 
+            if ($yychar < 0) {
+                if (($yychar = yylex($pos, $last_pos)) < 0) { 
+                    $yychar = 0;
+                }
+            }
 
+            if (($yyn = $yysindex[$yystate]) && ($yyn += $yychar) >= 0 &&
+                    $yyn <= $#yycheck && $yycheck[$yyn] == $yychar)
+            {
+                $yyss[++$yyssp] = $yystate = $yytable[$yyn];
+                $yyvs[++$yyvsp] = $yylval;
+                $yychar = (-1);
+                --$yyerrflag if $yyerrflag > 0;
+                next yyloop;
+            }
 
-
-        $yyss[++$yyssp] = $yystate = $yytable[$yyn];
-        $yyvs[++$yyvsp] = $yylval;
-        next yyloop;
-      }
-      else
-      {
-
-
-
-
-        return(1) if $yyssp <= 0;
-        --$yyssp;
-        --$yyvsp;
-      }
-    }
-  }
-  else
-  {
-    return (1) if $yychar == 0;
-    $yychar = -1;
-    next yyloop;
-  }
-0;
-} # yy_err_recover
-
-sub yyparse
-{
-
-  if ($yys = $ENV{'YYDEBUG'})
-  {
-    $yydebug = int($1) if $yys =~ /^(\d)/;
-  }
-
-
-  $yynerrs = 0;
-  $yyerrflag = 0;
-  $yychar = (-1);
-
-  $yyssp = 0;
-  $yyvsp = 0;
-  $yyss[$yyssp] = $yystate = 0;
-
-yyloop: while(1)
-  {
-    yyreduce: {
-      last yyreduce if ($yyn = $yydefred[$yystate]);
-      if ($yychar < 0)
-      {
-        if (($yychar = &yylex) < 0) { $yychar = 0; }
-      }
-      if (($yyn = $yysindex[$yystate]) && ($yyn += $yychar) >= 0 &&
-              $yyn <= $#yycheck && $yycheck[$yyn] == $yychar)
-      {
-
-
-
-
-        $yyss[++$yyssp] = $yystate = $yytable[$yyn];
-        $yyvs[++$yyvsp] = $yylval;
-        $yychar = (-1);
-        --$yyerrflag if $yyerrflag > 0;
-        next yyloop;
-      }
-      if (($yyn = $yyrindex[$yystate]) && ($yyn += $yychar) >= 0 &&
+            if (($yyn = $yyrindex[$yystate]) && ($yyn += $yychar) >= 0 &&
             $yyn <= $#yycheck && $yycheck[$yyn] == $yychar)
-      {
-        $yyn = $yytable[$yyn];
-        last yyreduce;
-      }
-      if (! $yyerrflag) {
-        &yyerror('syntax error');
-        ++$yynerrs;
-      }
-      return undef if &yy_err_recover;
-    } # yyreduce
+            {
+                $yyn = $yytable[$yyn];
+                last yyreduce;
+            }
 
+            if (! $yyerrflag) {
+                die('syntax error');
+            }
 
+            die 'unknown error';
 
+        } # yyreduce
 
-    $yym = $yylen[$yyn];
-    $yyval = $yyvs[$yyvsp+1-$yym];
-    switch:
-    {
-my $label = "State$yyn";
-goto $label if exists $yystate{$label};
-last switch;
-State1: {
-# 107 "parser.y"
-{ $yyval = { '' => $yyvs[$yyvsp-0] }; 
-last switch;
-} }
-State3: {
-# 112 "parser.y"
-{
-		  $yyval = { $yyvs[$yyvsp-2], [$yyvs[$yyvsp-0]] };
-		
-last switch;
-} }
-State4: {
-# 116 "parser.y"
-{
-		  $yyval=$yyvs[$yyvsp-3];
-		  $yyval->{$yyvs[$yyvsp-2]} = [$yyvs[$yyvsp-0]];
-		
-last switch;
-} }
-State5: {
-# 123 "parser.y"
-{
-		  $yyvs[$yyvsp-1]->[cTAG] = $yyvs[$yyvsp-3];
-		  $yyval = need_explicit($yyvs[$yyvsp-3],$yyvs[$yyvsp-2]) ? explicit($yyvs[$yyvsp-1]) : $yyvs[$yyvsp-1];
-		
-last switch;
-} }
-State11: {
-# 137 "parser.y"
-{
-		  @{$yyval = []}[cTYPE,cCHILD] = ('COMPONENTS', $yyvs[$yyvsp-0]);
-		
-last switch;
-} }
-State14: {
-# 147 "parser.y"
-{
-		  $yyvs[$yyvsp-1]->[cTAG] = $yyvs[$yyvsp-3];
-		  @{$yyval = []}[cTYPE,cCHILD,cLOOP,cOPT] = ($yyvs[$yyvsp-5], [$yyvs[$yyvsp-1]], 1, $yyvs[$yyvsp-0]);
-		  $yyval = explicit($yyval) if need_explicit($yyvs[$yyvsp-3],$yyvs[$yyvsp-2]);
-		
-last switch;
-} }
-State18: {
-# 160 "parser.y"
-{
-		  @{$yyval = []}[cTYPE,cCHILD] = ('SEQUENCE', $yyvs[$yyvsp-1]);
-		
-last switch;
-} }
-State19: {
-# 164 "parser.y"
-{
-		  @{$yyval = []}[cTYPE,cCHILD] = ('SET', $yyvs[$yyvsp-1]);
-		
-last switch;
-} }
-State20: {
-# 168 "parser.y"
-{
-		  @{$yyval = []}[cTYPE,cCHILD] = ('CHOICE', $yyvs[$yyvsp-1]);
-		
-last switch;
-} }
-State21: {
-# 174 "parser.y"
-{
-		  @{$yyval = []}[cTYPE] = ('ENUM');
-		
-last switch;
-} }
-State22: {
-# 179 "parser.y"
-{ @{$yyval = []}[cTYPE] = $yyvs[$yyvsp-0]; 
-last switch;
-} }
-State23: {
-# 180 "parser.y"
-{ @{$yyval = []}[cTYPE] = $yyvs[$yyvsp-0]; 
-last switch;
-} }
-State24: {
-# 181 "parser.y"
-{ @{$yyval = []}[cTYPE] = $yyvs[$yyvsp-0]; 
-last switch;
-} }
-State25: {
-# 183 "parser.y"
-{
-		  @{$yyval = []}[cTYPE,cCHILD,cDEFINE] = ('ANY',undef,$yyvs[$yyvsp-0]);
-		
-last switch;
-} }
-State26: {
-# 186 "parser.y"
-{ @{$yyval = []}[cTYPE] = $yyvs[$yyvsp-0]; 
-last switch;
-} }
-State27: {
-# 189 "parser.y"
-{ $yyval=undef; 
-last switch;
-} }
-State28: {
-# 190 "parser.y"
-{ $yyval=$yyvs[$yyvsp-0]; 
-last switch;
-} }
-State30: {
-# 196 "parser.y"
-{ $yyval = $yyvs[$yyvsp-0]; 
-last switch;
-} }
-State31: {
-# 197 "parser.y"
-{ $yyval = $yyvs[$yyvsp-1]; 
-last switch;
-} }
-State32: {
-# 201 "parser.y"
-{
-		  $yyval = [ $yyvs[$yyvsp-0] ];
-		
-last switch;
-} }
-State33: {
-# 205 "parser.y"
-{
-		  push @{$yyval=$yyvs[$yyvsp-2]}, $yyvs[$yyvsp-0];
-		
-last switch;
-} }
-State34: {
-# 209 "parser.y"
-{
-		  push @{$yyval=$yyvs[$yyvsp-2]}, $yyvs[$yyvsp-0];
-		
-last switch;
-} }
-State35: {
-# 215 "parser.y"
-{
-		  @{$yyval=$yyvs[$yyvsp-0]}[cVAR,cTAG] = ($yyvs[$yyvsp-3],$yyvs[$yyvsp-2]);
-		  $yyval = explicit($yyval) if need_explicit($yyvs[$yyvsp-2],$yyvs[$yyvsp-1]);
-		
-last switch;
-} }
-State36: {
-# 220 "parser.y"
-{
-		    @{$yyval=[]}[cTYPE] = 'EXTENSION_MARKER';
-		
-last switch;
-} }
-State37: {
-# 226 "parser.y"
-{ $yyval = []; 
-last switch;
-} }
-State38: {
-# 228 "parser.y"
-{
-		  my $extension = 0;
-		  $yyval = [];
-		  for my $i (@{$yyvs[$yyvsp-0]}) {
-		    $extension = 1 if $i->[cTYPE] eq 'EXTENSION_MARKER';
-		    $i->[cEXT] = $i->[cOPT];
-		    $i->[cEXT] = 1 if $extension;
-		    push @{$yyval}, $i unless $i->[cTYPE] eq 'EXTENSION_MARKER';
-		  }
-		  my $e = []; $e->[cTYPE] = 'EXTENSION_MARKER';
-		  push @{$yyval}, $e if $extension;
-		
-last switch;
-} }
-State39: {
-# 241 "parser.y"
-{
-		  my $extension = 0;
-		  $yyval = [];
-		  for my $i (@{$yyvs[$yyvsp-1]}) {
-		    $extension = 1 if $i->[cTYPE] eq 'EXTENSION_MARKER';
-		    $i->[cEXT] = $i->[cOPT];
-		    $i->[cEXT] = 1 if $extension;
-		    push @{$yyval}, $i unless $i->[cTYPE] eq 'EXTENSION_MARKER';
-		  }
-		  my $e = []; $e->[cTYPE] = 'EXTENSION_MARKER';
-		  push @{$yyval}, $e if $extension;
-		
-last switch;
-} }
-State40: {
-# 256 "parser.y"
-{
-		  $yyval = [ $yyvs[$yyvsp-0] ];
-		
-last switch;
-} }
-State41: {
-# 260 "parser.y"
-{
-		  push @{$yyval=$yyvs[$yyvsp-2]}, $yyvs[$yyvsp-0];
-		
-last switch;
-} }
-State42: {
-# 264 "parser.y"
-{
-		  push @{$yyval=$yyvs[$yyvsp-2]}, $yyvs[$yyvsp-0];
-		
-last switch;
-} }
-State43: {
-# 270 "parser.y"
-{
-		  @{$yyval=$yyvs[$yyvsp-1]}[cOPT] = ($yyvs[$yyvsp-0]);
-		
-last switch;
-} }
-State47: {
-# 279 "parser.y"
-{
-		  @{$yyval=$yyvs[$yyvsp-0]}[cVAR,cTAG] = ($yyvs[$yyvsp-3],$yyvs[$yyvsp-2]);
-		  $yyval->[cOPT] = $yyvs[$yyvsp-3] if $yyval->[cOPT];
-		  $yyval = explicit($yyval) if need_explicit($yyvs[$yyvsp-2],$yyvs[$yyvsp-1]);
-		
-last switch;
-} }
-State49: {
-# 286 "parser.y"
-{
-		  @{$yyval=$yyvs[$yyvsp-0]}[cTAG] = ($yyvs[$yyvsp-2]);
-		  $yyval = explicit($yyval) if need_explicit($yyvs[$yyvsp-2],$yyvs[$yyvsp-1]);
-		
-last switch;
-} }
-State50: {
-# 291 "parser.y"
-{
-		    @{$yyval=[]}[cTYPE] = 'EXTENSION_MARKER';
-		
-last switch;
-} }
-State51: {
-# 296 "parser.y"
-{ $yyval = undef; 
-last switch;
-} }
-State52: {
-# 297 "parser.y"
-{ $yyval = 1;     
-last switch;
-} }
-State53: {
-# 301 "parser.y"
-{ $yyval = undef; 
-last switch;
-} }
-State55: {
-# 305 "parser.y"
-{ $yyval = undef; 
-last switch;
-} }
-State56: {
-# 306 "parser.y"
-{ $yyval = 1;     
-last switch;
-} }
-State57: {
-# 307 "parser.y"
-{ $yyval = 0;     
-last switch;
-} }
-State58: {
-# 310 "parser.y"
-{
-last switch;
-} }
-State59: {
-# 311 "parser.y"
-{
-last switch;
-} }
-State60: {
-# 314 "parser.y"
-{
-last switch;
-} }
-State61: {
-# 317 "parser.y"
-{
-last switch;
-} }
-State62: {
-# 318 "parser.y"
-{
-last switch;
-} }
+        $yym = $yylen[$yyn];
+        $yyval = $yyvs[$yyvsp+1-$yym];
+
+        switch: {
+            my $label = "State$yyn";
+
+            goto $label if exists $yystate{$label};
+
+            last switch;
+
+            State1: {
+                # 107 "parser.y"
+                $yyval = { '' => $yyvs[$yyvsp-0] };
+                last switch;
+            }
+
+            State3: {
+                # 112 "parser.y"
+                $yyval = { $yyvs[$yyvsp-2], [$yyvs[$yyvsp-0]] };
+                last switch;
+            }
+
+            State4: {
+                # 116 "parser.y"
+                $yyval=$yyvs[$yyvsp-3];
+                $yyval->{$yyvs[$yyvsp-2]} = [$yyvs[$yyvsp-0]];
+                last switch;
+            }
+
+            State5: {
+                # 123 "parser.y"
+                $yyvs[$yyvsp-1]->[cTAG] = $yyvs[$yyvsp-3];
+                $yyval = need_explicit($yyvs[$yyvsp-3],$yyvs[$yyvsp-2])
+                    ? explicit($yyvs[$yyvsp-1])
+                    : $yyvs[$yyvsp-1];
+                last switch;
+            }
+
+            State11: {
+                # 137 "parser.y"
+                @{$yyval = []}[cTYPE,cCHILD] = ('COMPONENTS', $yyvs[$yyvsp-0]);
+                last switch;
+            }
+
+            State14: {
+                # 147 "parser.y"
+                $yyvs[$yyvsp-1]->[cTAG] = $yyvs[$yyvsp-3];
+                @{$yyval = []}[cTYPE,cCHILD,cLOOP,cOPT] = ($yyvs[$yyvsp-5], [$yyvs[$yyvsp-1]], 1, $yyvs[$yyvsp-0]);
+                $yyval = explicit($yyval) if need_explicit($yyvs[$yyvsp-3],$yyvs[$yyvsp-2]);
+                last switch;
+            }
+
+            State18: {
+                # 160 "parser.y"
+                @{$yyval = []}[cTYPE,cCHILD] = ('SEQUENCE', $yyvs[$yyvsp-1]);
+                last switch;
+            }
+
+            State19: {
+                # 164 "parser.y"
+                @{$yyval = []}[cTYPE,cCHILD] = ('SET', $yyvs[$yyvsp-1]);
+                last switch;
+            }
+
+            State20: {
+                # 168 "parser.y"
+                @{$yyval = []}[cTYPE,cCHILD] = ('CHOICE', $yyvs[$yyvsp-1]);
+                last switch;
+            }
+
+            State21: {
+                # 174 "parser.y"
+                @{$yyval = []}[cTYPE] = ('ENUM');
+                last switch;
+            }
+
+            State22: {
+                # 179 "parser.y"
+                @{$yyval = []}[cTYPE] = $yyvs[$yyvsp-0];
+                last switch;
+            }
+
+            State23: {
+                # 180 "parser.y"
+                @{$yyval = []}[cTYPE] = $yyvs[$yyvsp-0];
+                last switch;
+            }
+
+            State24: {
+                # 181 "parser.y"
+                @{$yyval = []}[cTYPE] = $yyvs[$yyvsp-0];
+                last switch;
+            }
+
+            State25: {
+                # 183 "parser.y"
+                @{$yyval = []}[cTYPE,cCHILD,cDEFINE] = ('ANY',undef,$yyvs[$yyvsp-0]);
+                last switch;
+            }
+
+            State26: {
+                # 186 "parser.y"
+                @{$yyval = []}[cTYPE] = $yyvs[$yyvsp-0];
+                last switch;
+            }
+
+            State27: {
+                # 189 "parser.y"
+                $yyval=undef;
+                last switch;
+            }
+
+            State28: {
+                # 190 "parser.y"
+                $yyval=$yyvs[$yyvsp-0]; 
+                last switch;
+            }
+
+            State30: {
+                # 196 "parser.y"
+                $yyval = $yyvs[$yyvsp-0];
+                last switch;
+            }
+
+            State31: {
+                # 197 "parser.y"
+                $yyval = $yyvs[$yyvsp-1]; 
+                last switch;
+            }
+
+            State32: {
+                # 201 "parser.y"
+                $yyval = [ $yyvs[$yyvsp-0] ];
+                last switch;
+            }
+
+            State33: {
+                # 205 "parser.y"
+                push @{$yyval=$yyvs[$yyvsp-2]}, $yyvs[$yyvsp-0];
+                last switch;
+            }
+
+            State34: {
+                # 209 "parser.y"
+                push @{$yyval=$yyvs[$yyvsp-2]}, $yyvs[$yyvsp-0];
+                last switch;
+            }
+
+            State35: {
+                # 215 "parser.y"
+                @{$yyval=$yyvs[$yyvsp-0]}[cVAR,cTAG] = ($yyvs[$yyvsp-3],$yyvs[$yyvsp-2]);
+                $yyval = explicit($yyval) if need_explicit($yyvs[$yyvsp-2],$yyvs[$yyvsp-1]);
+                last switch;
+            }
+
+            State36: {
+                # 220 "parser.y"
+                @{$yyval=[]}[cTYPE] = 'EXTENSION_MARKER';
+                last switch;
+            }
+
+            State37: {
+                # 226 "parser.y"
+                $yyval = [];
+                last switch;
+            }
+
+            State38: {
+                # 228 "parser.y"
+                my $extension = 0;
+                $yyval = [];
+                for my $i (@{$yyvs[$yyvsp-0]}) {
+                    $extension = 1 if $i->[cTYPE] eq 'EXTENSION_MARKER';
+                    $i->[cEXT] = $i->[cOPT];
+                    $i->[cEXT] = 1 if $extension;
+                    push @{$yyval}, $i unless $i->[cTYPE] eq 'EXTENSION_MARKER';
+                }
+                my $e = []; $e->[cTYPE] = 'EXTENSION_MARKER';
+                push @{$yyval}, $e if $extension;
+                last switch;
+            }
+
+            State39: {
+                # 241 "parser.y"
+                my $extension = 0;
+                $yyval = [];
+                for my $i (@{$yyvs[$yyvsp-1]}) {
+                    $extension = 1 if $i->[cTYPE] eq 'EXTENSION_MARKER';
+                    $i->[cEXT] = $i->[cOPT];
+                    $i->[cEXT] = 1 if $extension;
+                    push @{$yyval}, $i unless $i->[cTYPE] eq 'EXTENSION_MARKER';
+                }
+                my $e = []; $e->[cTYPE] = 'EXTENSION_MARKER';
+                push @{$yyval}, $e if $extension;
+                last switch;
+            }
+
+            State40: {
+                # 256 "parser.y"
+                $yyval = [ $yyvs[$yyvsp-0] ];
+                last switch;
+            }
+
+            State41: {
+                # 260 "parser.y"
+                push @{$yyval=$yyvs[$yyvsp-2]}, $yyvs[$yyvsp-0];
+                last switch;
+            }
+
+            State42: {
+                # 264 "parser.y"
+                push @{$yyval=$yyvs[$yyvsp-2]}, $yyvs[$yyvsp-0];
+                last switch;
+            }
+
+            State43: {
+                # 270 "parser.y"
+                @{$yyval=$yyvs[$yyvsp-1]}[cOPT] = ($yyvs[$yyvsp-0]);
+                last switch;
+            }
+
+            State47: {
+                # 279 "parser.y"
+                @{$yyval=$yyvs[$yyvsp-0]}[cVAR,cTAG] = ($yyvs[$yyvsp-3],$yyvs[$yyvsp-2]);
+                $yyval->[cOPT] = $yyvs[$yyvsp-3] if $yyval->[cOPT];
+                $yyval = explicit($yyval) if need_explicit($yyvs[$yyvsp-2],$yyvs[$yyvsp-1]);
+                last switch;
+            }
+
+            State49: {
+                # 286 "parser.y"
+                @{$yyval=$yyvs[$yyvsp-0]}[cTAG] = ($yyvs[$yyvsp-2]);
+                $yyval = explicit($yyval) if need_explicit($yyvs[$yyvsp-2],$yyvs[$yyvsp-1]);
+                last switch;
+            }
+
+            State50: {
+                # 291 "parser.y"
+                @{$yyval=[]}[cTYPE] = 'EXTENSION_MARKER';
+                last switch;
+            }
+
+            State51: {
+                # 296 "parser.y"
+                $yyval = undef;
+                last switch;
+            }
+
+            State52: {
+                # 297 "parser.y"
+                $yyval = 1;
+                last switch;
+            }
+
+            State53: {
+                # 301 "parser.y"
+                $yyval = undef;
+                last switch;
+            }
+
+            State55: {
+                # 305 "parser.y"
+                $yyval = undef;
+                last switch;
+            }
+
+            State56: {
+                # 306 "parser.y"
+                $yyval = 1;
+                last switch;
+            }
+
+            State57: {
+                # 307 "parser.y"
+                $yyval = 0;
+                last switch;
+            }
+
+            State58: {
+                # 310 "parser.y"
+                last switch;
+            }
+
+            State59: {
+                # 311 "parser.y"
+                last switch;
+            }
+
+            State60: {
+                # 314 "parser.y"
+                last switch;
+            }
+
+            State61: {
+                # 317 "parser.y"
+                last switch;
+            }
+
+            State62: {
+                # 318 "parser.y"
+                last switch;
+            }
     } # switch
+
     $yyssp -= $yym;
     $yystate = $yyss[$yyssp];
     $yyvsp -= $yym;
     $yym = $yylhs[$yyn];
-    if ($yystate == 0 && $yym == 0)
-    {
 
+    if ($yystate == 0 && $yym == 0) {
+        $yystate = constYYFINAL();
+        $yyss[++$yyssp] = constYYFINAL();
+        $yyvs[++$yyvsp] = $yyval;
 
+        if ($yychar < 0) {
+            if (($yychar = yylex($pos, $last_pos)) < 0) { $yychar = 0; }
+        }
 
-
-      $yystate = constYYFINAL();
-      $yyss[++$yyssp] = constYYFINAL();
-      $yyvs[++$yyvsp] = $yyval;
-      if ($yychar < 0)
-      {
-        if (($yychar = &yylex) < 0) { $yychar = 0; }
-      }
       return $yyvs[$yyvsp] if $yychar == 0;
+
       next yyloop;
     }
+
     if (($yyn = $yygindex[$yym]) && ($yyn += $yystate) >= 0 &&
-        $yyn <= $#yycheck && $yycheck[$yyn] == $yystate)
-    {
+        $yyn <= $#yycheck && $yycheck[$yyn] == $yystate) {
+
         $yystate = $yytable[$yyn];
-    } else {
+    }
+    else {
         $yystate = $yydgoto[$yym];
     }
-
-
-
 
     $yyss[++$yyssp] = $yystate;
     $yyvs[++$yyvsp] = $yyval;
@@ -2692,330 +2496,293 @@ last switch;
 } # yyparse
 # 322 "parser.y"
 
-my %reserved = (
-  'OPTIONAL' 	=> constOPTIONAL(),
-  'CHOICE' 	=> constCHOICE(),
-  'OF' 		=> constOF(),
-  'IMPLICIT' 	=> constIMPLICIT(),
-  'EXPLICIT' 	=> constEXPLICIT(),
-  'SEQUENCE'    => constSEQUENCE(),
-  'SET'         => constSET(),
-  'ANY'         => constANY(),
-  'ENUM'        => constENUM(),
-  'ENUMERATED'  => constENUM(),
-  'COMPONENTS'  => constCOMPONENTS(),
-  '{'		=> constLBRACE(),
-  '}'		=> constRBRACE(),
-  ','		=> constCOMMA(),
-  '::='         => constASSIGN(),
-  'DEFINED'     => constDEFINED(),
-  'BY'		=> constBY()
-);
-
-my $reserved = join("|", reverse sort grep { /\w/ } keys %reserved);
-
-my %tag_class = (
-  APPLICATION => ASN_APPLICATION,
-  UNIVERSAL   => ASN_UNIVERSAL,
-  PRIVATE     => ASN_PRIVATE,
-  CONTEXT     => ASN_CONTEXT,
-  ''	      => ASN_CONTEXT # if not specified, its CONTEXT
-);
-
-;##
-;## This is NOT thread safe !!!!!!
-;##
-
-my $pos;
-my $last_pos;
-my @stacked;
-
 sub parse {
-  local(*asn) = \($_[0]);
-  $tagdefault = $_[1] eq 'EXPLICIT' ? 1 : 0;
-  ($pos,$last_pos,@stacked) = ();
+    blerg "sub parse";
+    *asn = \($_[0]);
+    # $asn = \($_[0]);
+    $tagdefault = $_[1] eq 'EXPLICIT' ? 1 : 0;
+    (@stacked) = ();
 
-  eval {
-    local $SIG{__DIE__};
     compile(verify(yyparse()));
-  }
 }
 
 sub compile_one {
-  my $tree = shift;
-  my $ops = shift;
-  my $name = shift;
-  foreach my $op (@$ops) {
-    next unless ref($op) eq 'ARRAY';
-    bless $op;
-    my $type = $op->[cTYPE];
-    if (exists $base_type{$type}) {
-      $op->[cTYPE] = $base_type{$type}->[1];
-      $op->[cTAG] = defined($op->[cTAG]) ? asn_encode_tag($op->[cTAG]): $base_type{$type}->[0];
+    blerg "sub compile_one";
+    my $tree = shift;
+    my $ops = shift;
+    my $name = shift;
+    foreach my $op (@$ops) {
+        next unless ref($op) eq 'ARRAY';
+        bless $op;
+        my $type = $op->[cTYPE];
+
+        if (exists $base_type{$type}) {
+            $op->[cTYPE] = $base_type{$type}->[1];
+            $op->[cTAG] = defined($op->[cTAG]) ? asn_encode_tag($op->[cTAG]): $base_type{$type}->[0];
+        }
+
+        else {
+            die "Unknown type '$type'\n" unless exists $tree->{$type};
+
+            my $ref = compile_one(
+                $tree,
+                $tree->{$type},
+                defined($op->[cVAR]) ? $name . "." . $op->[cVAR] : $name
+                );
+
+            if (defined($op->[cTAG]) && $ref->[0][cTYPE] == opCHOICE) {
+                @{$op}[cTYPE,cCHILD] = (opSEQUENCE,$ref);
+            }
+
+            else {
+                @{$op}[cTYPE,cCHILD,cLOOP] = @{$ref->[0]}[cTYPE,cCHILD,cLOOP];
+            }
+
+            $op->[cTAG] = defined($op->[cTAG]) ? asn_encode_tag($op->[cTAG]): $ref->[0][cTAG];
+            }
+
+            $op->[cTAG] |= pack("C",ASN_CONSTRUCTOR)
+
+            if length $op->[cTAG] && ($op->[cTYPE] == opSET || $op->[cTYPE] == opEXPLICIT || $op->[cTYPE] == opSEQUENCE);
+
+            if ($op->[cCHILD]) {
+            # If we have children we are one of
+            #  opSET opSEQUENCE opCHOICE opEXPLICIT
+
+            compile_one($tree, $op->[cCHILD], defined($op->[cVAR]) ? $name . "." . $op->[cVAR] : $name);
+
+            # If a CHOICE is given a tag, then it must be EXPLICIT
+            if ($op->[cTYPE] == opCHOICE && defined($op->[cTAG]) && length($op->[cTAG])) {
+                $op = bless explicit($op);
+                $op->[cTYPE] = opSEQUENCE;
+            }
+
+            if ( @{$op->[cCHILD]} > 1) {
+                #if ($op->[cTYPE] != opSEQUENCE) {
+                # Here we need to flatten CHOICEs and check that SET and CHOICE
+                # do not contain duplicate tags
+                #}
+
+                if ($op->[cTYPE] == opSET) {
+                    # In case we do CER encoding we order the SET elements by thier tags
+                    my @tags = map { 
+                        length($_->[cTAG])
+                        ? $_->[cTAG]
+                        : $_->[cTYPE] == opCHOICE
+                        ? (sort map { $_->[cTAG] } $_->[cCHILD])[0]
+                        : ''
+                    } @{$op->[cCHILD]};
+
+                    @{$op->[cCHILD]} = @{$op->[cCHILD]}[sort { $tags[$a] cmp $tags[$b] } 0..$#tags];
+                }
+            }
+
+            else {
+                # A SET of one element can be treated the same as a SEQUENCE
+                $op->[cTYPE] = opSEQUENCE if $op->[cTYPE] == opSET;
+            }
+        }
     }
-    else {
-      die "Unknown type '$type'\n" unless exists $tree->{$type};
-      my $ref = compile_one(
-		  $tree,
-		  $tree->{$type},
-		  defined($op->[cVAR]) ? $name . "." . $op->[cVAR] : $name
-		);
-      if (defined($op->[cTAG]) && $ref->[0][cTYPE] == opCHOICE) {
-        @{$op}[cTYPE,cCHILD] = (opSEQUENCE,$ref);
-      }
-      else {
-        @{$op}[cTYPE,cCHILD,cLOOP] = @{$ref->[0]}[cTYPE,cCHILD,cLOOP];
-      }
-      $op->[cTAG] = defined($op->[cTAG]) ? asn_encode_tag($op->[cTAG]): $ref->[0][cTAG];
-    }
-    $op->[cTAG] |= pack("C",ASN_CONSTRUCTOR)
-      if length $op->[cTAG] && ($op->[cTYPE] == opSET || $op->[cTYPE] == opEXPLICIT || $op->[cTYPE] == opSEQUENCE);
 
-    if ($op->[cCHILD]) {
-      ;# If we have children we are one of
-      ;#  opSET opSEQUENCE opCHOICE opEXPLICIT
-
-      compile_one($tree, $op->[cCHILD], defined($op->[cVAR]) ? $name . "." . $op->[cVAR] : $name);
-
-      ;# If a CHOICE is given a tag, then it must be EXPLICIT
-      if ($op->[cTYPE] == opCHOICE && defined($op->[cTAG]) && length($op->[cTAG])) {
-	$op = bless explicit($op);
-	$op->[cTYPE] = opSEQUENCE;
-      }
-
-      if ( @{$op->[cCHILD]} > 1) {
-        ;#if ($op->[cTYPE] != opSEQUENCE) {
-        ;# Here we need to flatten CHOICEs and check that SET and CHOICE
-        ;# do not contain duplicate tags
-        ;#}
-	if ($op->[cTYPE] == opSET) {
-	  ;# In case we do CER encoding we order the SET elements by thier tags
-	  my @tags = map { 
-	    length($_->[cTAG])
-		? $_->[cTAG]
-		: $_->[cTYPE] == opCHOICE
-			? (sort map { $_->[cTAG] } $_->[cCHILD])[0]
-			: ''
-	  } @{$op->[cCHILD]};
-	  @{$op->[cCHILD]} = @{$op->[cCHILD]}[sort { $tags[$a] cmp $tags[$b] } 0..$#tags];
-	}
-      }
-      else {
-	;# A SET of one element can be treated the same as a SEQUENCE
-	$op->[cTYPE] = opSEQUENCE if $op->[cTYPE] == opSET;
-      }
-    }
-  }
-  $ops;
+  return $ops;
 }
 
 sub compile {
-  my $tree = shift;
+    blerg "sub compile";
+    my $tree = shift;
 
-  ;# The tree should be valid enough to be able to
-  ;#  - resolve references
-  ;#  - encode tags
-  ;#  - verify CHOICEs do not contain duplicate tags
+    # The tree should be valid enough to be able to
+    #  - resolve references
+    #  - encode tags
+    #  - verify CHOICEs do not contain duplicate tags
 
-  ;# once references have been resolved, and also due to
-  ;# flattening of COMPONENTS, it is possible for an op
-  ;# to appear in multiple places. So once an op is
-  ;# compiled we bless it. This ensure we dont try to
-  ;# compile it again.
+    # once references have been resolved, and also due to
+    # flattening of COMPONENTS, it is possible for an op
+    # to appear in multiple places. So once an op is
+    # compiled we bless it. This ensure we dont try to
+    # compile it again.
 
-  while(my($k,$v) = each %$tree) {
-    compile_one($tree,$v,$k);
-  }
+    while(my($k,$v) = each %$tree) {
+        compile_one($tree,$v,$k);
+    }
 
-  $tree;
+    return $tree;
 }
 
 sub verify {
-  my $tree = shift or return;
-  my $err = "";
+    blerg "sub verify";
+    my $tree = shift or return;
+    my $err = "";
 
-  ;# Well it parsed correctly, now we
-  ;#  - check references exist
-  ;#  - flatten COMPONENTS OF (checking for loops)
-  ;#  - check for duplicate var names
+    # Well it parsed correctly, now we
+    #  - check references exist
+    #  - flatten COMPONENTS OF (checking for loops)
+    #  - check for duplicate var names
 
-  while(my($name,$ops) = each %$tree) {
-    my $stash = {};
-    my @scope = ();
-    my $path = "";
-    my $idx = 0;
+    while(my($name,$ops) = each %$tree) {
+        my $stash = {};
+        my @scope = ();
+        my $path = "";
+        my $idx = 0;
 
-    while($ops) {
-      if ($idx < @$ops) {
-	my $op = $ops->[$idx++];
-	my $var;
-	if (defined ($var = $op->[cVAR])) {
-	  
-	  $err .= "$name: $path.$var used multiple times\n"
-	    if $stash->{$var}++;
+        while($ops) {
+            if ($idx < @$ops) {
+                my $op = $ops->[$idx++];
+                my $var;
 
-	}
-	if (defined $op->[cCHILD]) {
-	  if (ref $op->[cCHILD]) {
-	    push @scope, [$stash, $path, $ops, $idx];
-	    if (defined $var) {
-	      $stash = {};
-	      $path .= "." . $var;
-	    }
-	    $idx = 0;
-	    $ops = $op->[cCHILD];
-	  }
-	  elsif ($op->[cTYPE] eq 'COMPONENTS') {
-	    splice(@$ops,--$idx,1,expand_ops($tree, $op->[cCHILD]));
-	  }
-          else {
-	    die "Internal error\n";
-          }
-	}
-      }
-      else {
-	my $s = pop @scope
-	  or last;
-	($stash,$path,$ops,$idx) = @$s;
-      }
+                if (defined ($var = $op->[cVAR])) {
+
+                    $err .= "$name: $path.$var used multiple times\n"
+                    if $stash->{$var}++;
+
+                }
+
+                if (defined $op->[cCHILD]) {
+                    if (ref $op->[cCHILD]) {
+                        push @scope, [$stash, $path, $ops, $idx];
+                        if (defined $var) {
+                            $stash = {};
+                            $path .= "." . $var;
+                        }
+                        $idx = 0;
+                        $ops = $op->[cCHILD];
+                    }
+
+                    elsif ($op->[cTYPE] eq 'COMPONENTS') {
+                        splice(@$ops,--$idx,1,expand_ops($tree, $op->[cCHILD]));
+                    }
+
+                    else {
+                        die "Internal error\n";
+                    }
+                }
+            }
+            else {
+                my $s = pop @scope or last;
+                ($stash,$path,$ops,$idx) = @$s;
+            }
+        }
     }
-  }
+
   die $err if length $err;
   $tree;
 }
 
 sub expand_ops {
-  my $tree = shift;
-  my $want = shift;
-  my $seen = shift || { };
-  
-  die "COMPONENTS OF loop $want\n" if $seen->{$want}++;
-  die "Undefined macro $want\n" unless exists $tree->{$want};
-  my $ops = $tree->{$want};
-  die "Bad macro for COMPUNENTS OF '$want'\n"
-    unless @$ops == 1
-        && ($ops->[0][cTYPE] eq 'SEQUENCE' || $ops->[0][cTYPE] eq 'SET')
-        && ref $ops->[0][cCHILD];
-  $ops = $ops->[0][cCHILD];
-  for(my $idx = 0 ; $idx < @$ops ; ) {
-    my $op = $ops->[$idx++];
-    if ($op->[cTYPE] eq 'COMPONENTS') {
-      splice(@$ops,--$idx,1,expand_ops($tree, $op->[cCHILD], $seen));
+    blerg "sub expand_ops";
+    my $tree = shift;
+    my $want = shift;
+    my $seen = shift || { };
+
+    die "COMPONENTS OF loop $want\n" if $seen->{$want}++;
+    die "Undefined macro $want\n" unless exists $tree->{$want};
+    my $ops = $tree->{$want};
+
+    die "Bad macro for COMPUNENTS OF '$want'\n"
+        unless @$ops == 1
+            && ($ops->[0][cTYPE] eq 'SEQUENCE' || $ops->[0][cTYPE] eq 'SET')
+            && ref $ops->[0][cCHILD];
+    $ops = $ops->[0][cCHILD];
+
+    for(my $idx = 0 ; $idx < @$ops ; ) {
+        my $op = $ops->[$idx++];
+        if ($op->[cTYPE] eq 'COMPONENTS') {
+            splice(@$ops,--$idx,1,expand_ops($tree, $op->[cCHILD], $seen));
+        }
     }
-  }
 
-  @$ops;
-}
-
-sub _yylex {
-  my $ret = &_yylex;
-  warn $ret;
-  $ret;
+    return @$ops;
 }
 
 sub yylex {
-  return shift @stacked if @stacked;
+    $pos = shift;
+    $last_pos = shift;
+    blerg "sub yylex";
+    return shift @stacked if @stacked;
 
-  while ($asn =~ /\G(?:
-	  (\s+|--[^\n]*)
-	|
-	  ([,{}]|::=)
-	|
-	  ($reserved)\b
-	|
-	  (
-	    (?:OCTET|BIT)\s+STRING
-	   |
-	    OBJECT\s+IDENTIFIER
-	   |
-	    RELATIVE-OID
-	  )\b
-	|
-	  (\w+(?:-\w+)*)
-	|
-	    \[\s*
-	  (
-	   (?:(?:APPLICATION|PRIVATE|UNIVERSAL|CONTEXT)\s+)?
-	   \d+
-          )
-	    \s*\]
-	|
-	  \((\d+)\)
-	|
-	  (\.\.\.)
-	)/sxgo
-  ) {
+    while ($asn =~ /\G(?:
+        (\s+|--[^\n]*)
+        |
+        ([,{}]|::=)
+        |
+        ($reserved)\b
+        |
+        (
+            (?:OCTET|BIT)\s+STRING
+        |
+            OBJECT\s+IDENTIFIER
+        |
+            RELATIVE-OID
+        )\b
+        |
+        (\w+(?:-\w+)*)
+        |
+            \[\s*
+        (
+        (?:(?:APPLICATION|PRIVATE|UNIVERSAL|CONTEXT)\s+)?
+        \d+
+            )
+            \s*\]
+        |
+        \((\d+)\)
+        |
+        (\.\.\.)
+        )/sxg
+    ) {
 
-    ($last_pos,$pos) = ($pos,pos($asn));
+        ($last_pos,$pos) = ($pos,pos($asn));
 
-    next if defined $1; # comment or whitespace
+        next if defined $1; # comment or whitespace
 
-    if (defined $2 or defined $3) {
-      my $ret = $+;
+        if (defined $2 or defined $3) {
+            my $ret = $+;
 
-      # A comma is not required after a '}' so to aid the
-      # parser we insert a fake token after any '}'
-      if ($ret eq '}') {
-        my $p   = pos($asn);
-        my @tmp = @stacked;
-        @stacked = ();
-        pos($asn) = $p if yylex() != constCOMMA();    # swallow it
-        @stacked = (@tmp, constPOSTRBRACE());
-      }
+            # A comma is not required after a '}' so to aid the
+            # parser we insert a fake token after any '}'
+            if ($ret eq '}') {
+                my $p   = pos($asn);
+                my @tmp = @stacked;
+                @stacked = ();
+                pos($asn) = $p if yylex($pos, $last_pos) != constCOMMA();    # swallow it
+                @stacked = (@tmp, constPOSTRBRACE());
+            }
 
-      return $reserved{$yylval = $ret};
+            return $reserved{$yylval = $ret};
+        }
+
+        if (defined $4) {
+            ($yylval = $+) =~ s/\s+/_/g;
+            return constWORD();
+        }
+
+        if (defined $5) {
+            $yylval = $+;
+            return constWORD();
+        }
+
+        if (defined $6) {
+            my($class,$num) = ($+ =~ /^([A-Z]*)\s*(\d+)$/);
+            $yylval = asn_tag($tag_class{$class}, $num); 
+            return constCLASS();
+        }
+
+        if (defined $7) {
+            $yylval = $+;
+            return constNUMBER();
+        }
+
+        if (defined $8) {
+            return constEXTENSION_MARKER();
+        }
+
+        die "Internal error\n";
+
     }
 
-    if (defined $4) {
-      ($yylval = $+) =~ s/\s+/_/g;
-      return constWORD();
-    }
+    die "Parse error before ",substr($asn,$pos,40),"\n"
+        unless $pos == length($asn);
 
-    if (defined $5) {
-      $yylval = $+;
-      return constWORD();
-    }
-
-    if (defined $6) {
-      my($class,$num) = ($+ =~ /^([A-Z]*)\s*(\d+)$/);
-      $yylval = asn_tag($tag_class{$class}, $num); 
-      return constCLASS();
-    }
-
-    if (defined $7) {
-      $yylval = $+;
-      return constNUMBER();
-    }
-
-    if (defined $8) {
-      return constEXTENSION_MARKER();
-    }
-
-    die "Internal error\n";
-
-  }
-
-  die "Parse error before ",substr($asn,$pos,40),"\n"
-    unless $pos == length($asn);
-
-  0
+    return 0;
 }
 
-sub yyerror {
-  die @_," ",substr($asn,$last_pos,40),"\n";
-}
-
-1;
-
-%yystate = ('State51','','State34','','State11','','State33','','State24',
-'','State47','','State40','','State31','','State37','','State23','',
-'State22','','State21','','State57','','State39','','State56','','State20',
-'','State25','','State38','','State62','','State14','','State19','',
-'State5','','State53','','State26','','State27','','State50','','State36',
-'','State4','','State3','','State32','','State49','','State43','','State30',
-'','State35','','State52','','State55','','State42','','State28','',
-'State58','','State61','','State41','','State18','','State59','','State1',
-'','State60','');
-
-1;
 1;

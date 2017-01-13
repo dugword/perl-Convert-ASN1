@@ -1,0 +1,228 @@
+Connecting...
+Binding...
+(
+  "version",
+  3,
+  "authentication",
+  { simple => "dpassword" },
+  "name",
+  "cn=read-only-admin,dc=example,dc=com",
+)
+undef
+Ending...
+49
+Invalid credentials
+Invalid credentials
+Searching...
+
+PARSING
+
+PARSED
+filter => (|(objectClass=person)(objectClass=user))
+bless({
+  or => [
+          {
+            equalityMatch => { assertionValue => "person", attributeDesc => "objectClass" },
+          },
+          {
+            equalityMatch => { assertionValue => "user", attributeDesc => "objectClass" },
+          },
+        ],
+}, "Net::LDAP::Filter")
+{
+  attributes   => [],
+  baseObject   => "dc=example,dc=com",
+  derefAliases => 2,
+  filter       => bless({
+                    or => [
+                            {
+                              equalityMatch => { assertionValue => "person", attributeDesc => "objectClass" },
+                            },
+                            {
+                              equalityMatch => { assertionValue => "user", attributeDesc => "objectClass" },
+                            },
+                          ],
+                  }, "Net::LDAP::Filter"),
+  scope        => 2,
+  sizeLimit    => 0,
+  timeLimit    => 0,
+  typesOnly    => 0,
+}
+undef
+person
+Entries...
+------------------------------------------------------------------------
+dn:uid=pasteur,dc=example,dc=com
+
+    objectClass: inetOrgPerson
+                 organizationalPerson
+                 person
+                 top
+             sn: Pasteur
+             cn: Louis Pasteur
+            uid: pasteur
+telephoneNumber: 602-214-4978
+           mail: pasteur@ldap.forumsys.com
+------------------------------------------------------------------------
+dn:uid=nogroup,dc=example,dc=com
+
+        uid: nogroup
+objectClass: inetOrgPerson
+             organizationalPerson
+             person
+             top
+         cn: No Group
+       mail: nogroup@ldap.forumsys.com
+         sn: Group
+------------------------------------------------------------------------
+dn:uid=einstein,dc=example,dc=com
+
+    objectClass: inetOrgPerson
+                 organizationalPerson
+                 person
+                 top
+             cn: Albert Einstein
+             sn: Einstein
+            uid: einstein
+           mail: einstein@ldap.forumsys.com
+telephoneNumber: 314-159-2653
+------------------------------------------------------------------------
+dn:uid=newton,dc=example,dc=com
+
+         sn: Newton
+objectClass: inetOrgPerson
+             organizationalPerson
+             person
+             top
+        uid: newton
+       mail: newton@ldap.forumsys.com
+         cn: Isaac Newton
+------------------------------------------------------------------------
+dn:uid=gauss,dc=example,dc=com
+
+objectClass: inetOrgPerson
+             organizationalPerson
+             person
+             top
+         cn: Carl Friedrich Gauss
+         sn: Gauss
+        uid: gauss
+       mail: gauss@ldap.forumsys.com
+------------------------------------------------------------------------
+dn:uid=riemann,dc=example,dc=com
+
+objectClass: inetOrgPerson
+             organizationalPerson
+             person
+             top
+         cn: Bernhard Riemann
+         sn: Riemann
+        uid: riemann
+       mail: riemann@ldap.forumsys.com
+------------------------------------------------------------------------
+dn:uid=tesla,dc=example,dc=com
+
+  objectClass: inetOrgPerson
+               organizationalPerson
+               person
+               top
+               posixAccount
+           cn: Nikola Tesla
+           sn: Tesla
+          uid: tesla
+         mail: tesla@ldap.forumsys.com
+    uidNumber: 88888
+    gidNumber: 99999
+homeDirectory: home
+------------------------------------------------------------------------
+dn:uid=galieleo,dc=example,dc=com
+
+objectClass: inetOrgPerson
+             organizationalPerson
+             person
+             top
+         cn: Galileo Galilei
+         sn: Galilei
+        uid: galieleo
+       mail: galieleo@ldap.forumsys.com
+------------------------------------------------------------------------
+dn:uid=euclid,dc=example,dc=com
+
+        uid: euclid
+objectClass: inetOrgPerson
+             organizationalPerson
+             person
+             top
+         cn: Euclid
+         sn: Euclid
+       mail: euclid@ldap.forumsys.com
+------------------------------------------------------------------------
+dn:cn=read-only-admin,dc=example,dc=com
+
+         sn: Read Only Admin
+         cn: read-only-admin
+objectClass: inetOrgPerson
+             organizationalPerson
+             person
+             top
+------------------------------------------------------------------------
+dn:uid=test,dc=example,dc=com
+
+  objectClass: posixAccount
+               top
+               inetOrgPerson
+    gidNumber: 0
+    givenName: Test
+           sn: Test
+  displayName: Test
+          uid: test
+     initials: TS
+homeDirectory: home
+           cn: Test
+    uidNumber: 24601
+            o: Company
+------------------------------------------------------------------------
+dn:uid=curie,dc=example,dc=com
+
+        uid: curie
+objectClass: inetOrgPerson
+             organizationalPerson
+             person
+             top
+         cn: Marie Curie
+         sn: Curie
+       mail: curie@ldap.forumsys.com
+------------------------------------------------------------------------
+dn:uid=nobel,dc=example,dc=com
+
+        uid: nobel
+objectClass: inetOrgPerson
+             organizationalPerson
+             person
+             top
+       mail: nobel@ldap.forumsys.com
+         sn: Nobel
+         cn: Alfred Nobel
+------------------------------------------------------------------------
+dn:uid=boyle,dc=example,dc=com
+
+            uid: boyle
+    objectClass: inetOrgPerson
+                 organizationalPerson
+                 person
+                 top
+             cn: Robert Boyle
+             sn: Boyle
+           mail: boyle@ldap.forumsys.com
+telephoneNumber: 999-867-5309
+------------------------------------------------------------------------
+dn:uid=euler,dc=example,dc=com
+
+objectClass: inetOrgPerson
+             organizationalPerson
+             person
+             top
+        uid: euler
+         sn: Euler
+         cn: Leonhard Euler
+       mail: euler@ldap.forumsys.com

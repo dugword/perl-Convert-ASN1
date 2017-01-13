@@ -1,0 +1,37 @@
+#!/usr/bin/env perl
+
+use 5.024;
+use strict;
+use warnings;
+
+use lib 'lib';
+use Net::LDAP;
+
+say "Connecting...";
+my $ldap = Net::LDAP->new('ldap.forumsys.com') or die "$@";
+
+say "Binding...";
+my $mesg = $ldap->bind(
+    'cn=read-only-admin,dc=example,dc=com',
+    password => 'dpassword',
+);
+
+say "Ending...";
+say $mesg->code;
+say $mesg->error;
+$mesg->code && say $mesg->error;
+
+
+say "Searching...";
+$mesg = $ldap->search(
+    base   => 'dc=example,dc=com',
+    filter => '(|(objectClass=person)(objectClass=user))',
+);
+
+$mesg->code && say $mesg->error;
+
+say "Entries...";
+my @entries = $mesg->entries;
+for my $entry (sort @entries) {
+    $entry->dump;
+}

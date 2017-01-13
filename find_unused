@@ -1,0 +1,27 @@
+#!/usr/bin/env perl
+
+use 5.024;
+use strict;
+use warnings;
+use autodie;
+
+open my $sub_fh, '<', './sub_calls';
+open my $code_fh, '<', './lib/Convert/ASN1.pm';
+
+my %code_subs;
+my %called_subs;
+
+while (<$code_fh>) {
+    chomp;
+    next unless /blerg "(sub .+)"/;
+    $code_subs{$1}++;
+}
+
+while (<$sub_fh>) {
+    chomp;
+    $called_subs{$_}++;
+}
+
+while (my ($sub, $count) = each %code_subs) {
+    say $sub, " not called" unless $called_subs{$sub};
+}

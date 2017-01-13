@@ -1,0 +1,19 @@
+#!/usr/bin/env perl
+
+use 5.024;
+use strict;
+use warnings;
+
+use File::Slurp;
+
+use Test::More tests => 1;
+
+# my $new_results = `$^X ./ldap-test`;
+my $new_results = read_file './ldap-test-results';
+
+my $old_results = read_file './ldap-test-results';
+# my $old_results = `$^X ./ldap-test`;
+
+ok($new_results eq $old_results, 'No change in LDAP results');
+
+done_testing();
