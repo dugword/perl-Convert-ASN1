@@ -2128,7 +2128,7 @@ sub yyparse {
             last yyreduce if ($yyn = $yydefred[$yystate]);
 
             if ($yychar < 0) {
-                if (($yychar = yylex($pos, $last_pos)) < 0) { 
+                if (($yychar = yylex()) < 0) { 
                     $yychar = 0;
                 }
             }
@@ -2473,7 +2473,7 @@ sub yyparse {
         $yyvs[++$yyvsp] = $yyval;
 
         if ($yychar < 0) {
-            if (($yychar = yylex($pos, $last_pos)) < 0) { $yychar = 0; }
+            if (($yychar = yylex()) < 0) { $yychar = 0; }
         }
 
       return $yyvs[$yyvsp] if $yychar == 0;
@@ -2695,8 +2695,6 @@ sub expand_ops {
 }
 
 sub yylex {
-    $pos = shift;
-    $last_pos = shift;
     blerg "sub yylex";
     return shift @stacked if @stacked;
 
@@ -2743,7 +2741,7 @@ sub yylex {
                 my $p   = pos($asn);
                 my @tmp = @stacked;
                 @stacked = ();
-                pos($asn) = $p if yylex($pos, $last_pos) != constCOMMA();    # swallow it
+                pos($asn) = $p if yylex() != constCOMMA();    # swallow it
                 @stacked = (@tmp, constPOSTRBRACE());
             }
 
