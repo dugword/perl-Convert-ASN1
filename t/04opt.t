@@ -28,7 +28,11 @@ stest 6, $result, $asn->encode(%input) or warn $asn->error;
 btest 7, $ret = $asn->decode($result) or warn $asn->error;
 rtest 8, \%input, $ret;
 
-btest 9, not( $asn->encode(integer => 9));
+eval {
+    $asn->encode(integer => 9);
+};
+
+btest 9, $@ =~ /str is undefined/;
 
 btest 10, $asn->prepare( q(
   SEQUENCE {

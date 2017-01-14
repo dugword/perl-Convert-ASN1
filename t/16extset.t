@@ -80,4 +80,9 @@ btest 26, $asn->prepare(q(
     integer2 [4] INTEGER
   }
 )) or warn $asn->error;
-btest 27, !defined( $asn->encode(integer => 1, bool => 0, str => "A string") );
+
+eval {
+    $asn->encode(integer => 1, bool => 0, str => "A string");
+};
+
+btest 27, $@ =~ /integer2 is undefined/;

@@ -10,30 +10,58 @@ use warnings;
 
 use Data::Dump;
 
-use Carp;
 use Exporter;
 use Socket;
-use bytes;
 use Math::BigInt;
+use POSIX;
 
+# Figure out how to not use this
+use bytes;
+
+# Figure out how to not use this
 require Encode;
 
 sub blerg {
-    # open my $fh, '>>', './sub_calls'
-    #     or die "could not open file";
+    open my $fh, '>>', './sub_calls'
+        or die "could not open file";
 
-    # print {$fh} shift, "\n";
+    print {$fh} shift, "\n";
 }
 
-our ($VERSION, @ISA, @EXPORT_OK, %EXPORT_TAGS,
-    $asn,
+our ($VERSION, @ISA, @EXPORT_OK, %EXPORT_TAGS, );
+
+# Figure out how to not use this, and why it must be "our";
+our $asn,
+
+# Some unknown horseshit used by the parser/lexer. Make local
+my $yylval;
+
+# Standard export stuff
+@ISA = qw(Exporter);
+
+%EXPORT_TAGS = (
+io    => [qw(asn_recv asn_send asn_read asn_write asn_get asn_ready)],
+
+debug => [qw(asn_dump asn_hexdump)],
+
+const => [qw(
+    ASN_BOOLEAN     ASN_INTEGER      ASN_BIT_STR      ASN_OCTET_STR
+    ASN_NULL        ASN_OBJECT_ID    ASN_REAL         ASN_ENUMERATED
+    ASN_SEQUENCE    ASN_SET          ASN_PRINT_STR    ASN_IA5_STR
+    ASN_UTC_TIME    ASN_GENERAL_TIME ASN_RELATIVE_OID
+    ASN_UNIVERSAL   ASN_APPLICATION  ASN_CONTEXT      ASN_PRIVATE
+    ASN_PRIMITIVE   ASN_CONSTRUCTOR  ASN_LONG_LEN     ASN_EXTENSION_ID ASN_BIT)],
+
+    tag   => [qw(asn_tag  asn_decode_tag asn_encode_tag asn_decode_length asn_encode_length)]
 );
 
-my $yylval;
-my @_dec_real_base = (2,8,16);
-# In XS the will convert the tree between perl and C structs
+@EXPORT_OK = map { @$_ } values %EXPORT_TAGS;
+$EXPORT_TAGS{all} = \@EXPORT_OK;
 
-# my $asn;
+
+# some numbering system constants
+my @_dec_real_base = (2,8,16);
+
 
 use constant {
     constWORD => 1,
@@ -380,127 +408,88 @@ my $tagdefault = 1; # 0:IMPLICIT , 1:EXPLICIT default
 
 my $reserved = join("|", reverse sort grep { /\w/ } keys %reserved);
 
+# Manage current position in lexer, make local
 my $pos;
 my $last_pos;
 my @stacked;
 
-BEGIN {
-
-  @ISA = qw(Exporter);
-
-  %EXPORT_TAGS = (
-    io    => [qw(asn_recv asn_send asn_read asn_write asn_get asn_ready)],
-
-    debug => [qw(asn_dump asn_hexdump)],
-
-    const => [qw(
-        ASN_BOOLEAN     ASN_INTEGER      ASN_BIT_STR      ASN_OCTET_STR
-        ASN_NULL        ASN_OBJECT_ID    ASN_REAL         ASN_ENUMERATED
-        ASN_SEQUENCE    ASN_SET          ASN_PRINT_STR    ASN_IA5_STR
-        ASN_UTC_TIME    ASN_GENERAL_TIME ASN_RELATIVE_OID
-        ASN_UNIVERSAL   ASN_APPLICATION  ASN_CONTEXT      ASN_PRIVATE
-        ASN_PRIMITIVE   ASN_CONSTRUCTOR  ASN_LONG_LEN     ASN_EXTENSION_ID ASN_BIT)],
-
-    # tag   => [qw(asn_tag asn_decode_tag2 asn_decode_tag asn_encode_tag asn_decode_length asn_encode_length)]
-     tag   => [qw(asn_tag  asn_decode_tag asn_encode_tag asn_decode_length asn_encode_length)]
-  );
-
-  @EXPORT_OK = map { @$_ } values %EXPORT_TAGS;
-  $EXPORT_TAGS{all} = \@EXPORT_OK;
-}
-
-
-
-
+# Create new object
 sub new {
     blerg "sub new";
-  my $pkg = shift;
-  my $self = bless {}, $pkg;
+    my $pkg = shift;
+    my $self = bless {}, $pkg;
 
-  $self->configure(@_);
-  $self;
+    $self->configure(@_);
+    $self;
 }
-
 
 sub configure {
     blerg "sub configure";
-  my $self = shift;
-  my %opt = @_;
+    my $self = shift;
+    my %opt = @_;
 
-  $self->{options}{encoding} = uc($opt{encoding} || 'BER');
+    $self->{options}{encoding} = uc($opt{encoding} || 'BER');
 
-  unless ($self->{options}{encoding} =~ /^[BD]ER$/) {
-    croak("Unsupported encoding format '$opt{encoding}'");
-  }
-
-  # IMPLICIT as defalt for backwards compatibility, even though it's wrong.
-  $self->{options}{tagdefault} = uc($opt{tagdefault} || 'IMPLICIT');
-
-  unless ($self->{options}{tagdefault} =~ /^(?:EXPLICIT|IMPLICIT)$/) {
-    croak("Default tagging must be EXPLICIT/IMPLICIT. Not $opt{tagdefault}");
-  }
-
-
-  for my $type (qw(encode decode)) {
-    if (exists $opt{$type}) {
-      while(my($what,$value) = each %{$opt{$type}}) {
-    $self->{options}{"${type}_${what}"} = $value;
-      }
+    unless ($self->{options}{encoding} =~ /^[BD]ER$/) {
+        die "Unsupported encoding format '$opt{encoding}'";
     }
-  }
+
+    # IMPLICIT as defalt for backwards compatibility, even though it's wrong.
+    $self->{options}{tagdefault} = uc($opt{tagdefault} || 'IMPLICIT');
+
+    unless ($self->{options}{tagdefault} =~ /^(?:EXPLICIT|IMPLICIT)$/) {
+        die "Default tagging must be EXPLICIT/IMPLICIT. Not $opt{tagdefault}";
+    }
+
+
+    for my $type (qw(encode decode)) {
+        if (exists $opt{ $type }) {
+            while ( my ($what, $value) = each %{ $opt{ $type } } ) {
+                die unless $what =~ /timezone|time|bigint/;
+                $self->{options}{"${type}_${what}"} = $value;
+            }
+        }
+    }
 }
 
 
-
+# Find "what" in the parsed tree and return it as a new object
 sub find {
     blerg "sub find";
-  my $self = shift;
-  my $what = shift;
-  return unless exists $self->{tree}{$what};
-  my %new = %$self;
-  $new{script} = $new{tree}->{$what};
-  bless \%new, ref($self);
+    my $self = shift;
+
+    my $what = shift;
+    return unless exists $self->{tree}{$what};
+    my %new = %$self;
+    $new{script} = $new{tree}->{$what};
+    bless \%new, ref($self);
 }
 
 
 sub prepare {
     blerg "sub prepare";
-  my $self = shift;
-  my $asn  = shift;
+    my $self = shift;
+    my $asn  = shift;
 
-  $self = $self->new unless ref($self);
-  my $tree;
-  if( ref($asn) eq 'GLOB' ){
-    local $/ = undef;
-    my $txt = <$asn>;
-    # $tree = Convert::ASN1::parser::parse($txt,$self->{options}{tagdefault});
-    $tree = parse($txt,$self->{options}{tagdefault});
-  } else {
-    # $tree = Convert::ASN1::parser::parse($asn,$self->{options}{tagdefault});
-    $tree = parse($asn,$self->{options}{tagdefault});
-  }
+    my $tree = parse($asn, $self->{options}{tagdefault});
 
-  unless ($tree) {
-    $self->{error} = $@;
-    return;
-    ### If $self has been set to a new object, not returning
-    ### this object here will destroy the object, so the caller
-    ### won't be able to get at the error.
-  }
+    die 'Could not prepare tree' unless $tree;
 
-  $self->{tree} = $tree;
-  $self->{script} = (values %$tree)[0];
-  $self;
+    $self->{tree} = $tree;
+    $self->{script} = (values %$tree)[0];
+
+    return $self;
 }
 
 sub registeroid {
     blerg "sub registeroid";
-  my $self = shift;
-  my $oid  = shift;
-  my $handler = shift;
 
-  $self->{options}{oidtable}{$oid}=$handler;
-  $self->{oidtable}{$oid}=$handler;
+    my $self = shift;
+    my $oid  = shift;
+    my $handler = shift;
+
+    $self->{options}{oidtable}{$oid} = $handler;
+    $self->{oidtable}{$oid} = $handler;
 }
 
 
@@ -510,11 +499,10 @@ sub registeroid {
 
 sub encode {
     blerg "sub encode";
-  my $self  = shift;
-  my $stash = @_ == 1 ? shift : { @_ };
-  my $buf = '';
-  eval { _encode($self->{options}, $self->{script}, $stash, [], $buf) }
-    or do { $self->{error} = $@; undef }
+    my $self  = shift;
+    my $stash = @_ == 1 ? shift : { @_ };
+
+    return _encode($self->{options}, $self->{script}, $stash);
 }
 
 
@@ -742,302 +730,340 @@ my @encode = (
 
 sub _encode {
     blerg "sub _encode";
-  my ($optn, $ops, $stash, $path) = @_;
-  my $var;
+    my ($optn, $ops, $stash, $path, $buffer) = @_;
+    my $var;
 
-  foreach my $op (@{$ops}) {
-    next if $op->[cTYPE] == opEXTENSIONS;
-    if (defined(my $opt = $op->[cOPT])) {
-      next unless defined $stash->{$opt};
+    foreach my $op (@{$ops}) {
+        next if $op->[cTYPE] == opEXTENSIONS;
+
+        if (defined(my $opt = $op->[cOPT])) {
+            next unless defined $stash->{$opt};
+        }
+
+        if (defined($var = $op->[cVAR])) {
+            push @$path, $var;
+            die join(".", @$path)," is undefined" unless defined $stash->{$var};
+        }
+
+        $buffer .= $op->[cTAG];
+
+        my @stash_val;
+
+        # Horse shit
+        if (UNIVERSAL::isa($stash, 'HASH')) {
+            if (defined($var)) {
+                @stash_val = ($stash, $stash->{$var});
+            }
+            else {
+                @stash_val = ($stash, undef);
+            }
+        }
+        else {
+            @stash_val = ({}, $stash);
+        }
+
+        # $buffer = &{ $encode[ $op->[cTYPE] ] }(
+        $buffer = &{ $encode[ $op->[cTYPE] ] }(
+            $optn,
+            $op,
+            @stash_val,
+            $buffer,
+            $op->[cLOOP],
+            $path,
+        );
+
+        pop @$path if defined $var;
     }
-    if (defined($var = $op->[cVAR])) {
-      push @$path, $var;
-      croak(join(".", @$path)," is undefined")  unless defined $stash->{$var};
-    }
-    $_[4] .= $op->[cTAG];
 
-    &{$encode[$op->[cTYPE]]}(
-      $optn,
-      $op,
-      (UNIVERSAL::isa($stash, 'HASH')
-    ? ($stash, defined($var) ? $stash->{$var} : undef)
-    : ({}, $stash)),
-      $_[4],
-      $op->[cLOOP],
-      $path,
-    );
-
-    pop @$path if defined $var;
-  }
-
-  $_[4];
+    return $buffer;
 }
 
 
 sub _enc_boolean {
     blerg "sub _enc_boolean";
-# 0      1    2       3     4     5      6
-# $optn, $op, $stash, $var, $buf, $loop, $path
+    my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
 
-  $_[4] .= pack("CC",1, $_[3] ? 0xff : 0);
+    $buf .= pack("CC",1, $var ? 0xff : 0);
+
+    return $buf;
 }
 
 
 sub _enc_integer {
     blerg "sub _enc_integer";
-# 0      1    2       3     4     5      6
-# $optn, $op, $stash, $var, $buf, $loop, $path
-  if (abs($_[3]) >= 2**31) {
-    my $os = i2osp($_[3], ref($_[3]) || $_[0]->{encode_bigint} || 'Math::BigInt');
-    my $len = length $os;
-    my $msb = (vec($os, 0, 8) & 0x80) ? 0 : 255;
-    $len++, $os = pack("C",$msb) . $os if $msb xor $_[3] > 0;
-    $_[4] .= asn_encode_length($len);
-    $_[4] .= $os;
-  }
-  else {
-    my $val = int($_[3]);
-    my $neg = ($val < 0);
-    my $len = num_length($neg ? ~$val : $val);
-    my $msb = $val & (0x80 << (($len - 1) * 8));
+    my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
 
-    $len++ if $neg ? !$msb : $msb;
+    if (abs($var) >= 2**31) {
+        my $os = i2osp($var, ref($var)
+            || 'Math::BigInt');
 
-    $_[4] .= asn_encode_length($len);
-    $_[4] .= substr(pack("N",$val), -$len);
-  }
+        my $len = length $os;
+        my $msb = (vec($os, 0, 8) & 0x80) ? 0 : 255;
+
+        $len++, $os = pack("C",$msb) . $os if $msb xor $var > 0;
+        $buf .= asn_encode_length($len);
+        $buf .= $os;
+    }
+
+    else {
+        my $val = int($var);
+        my $neg = ($val < 0);
+        my $len = num_length($neg ? ~$val : $val);
+        my $msb = $val & (0x80 << (($len - 1) * 8));
+
+        $len++ if $neg ? !$msb : $msb;
+
+        $buf .= asn_encode_length($len);
+        $buf .= substr(pack("N",$val), -$len);
+    }
+
+    return $buf;
 }
 
 
 sub _enc_bitstring {
+    my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
     blerg "sub _enc_bitstring";
-# 0      1    2       3     4     5      6
-# $optn, $op, $stash, $var, $buf, $loop, $path
-  my $vref = ref($_[3]) ? \($_[3]->[0]) : \$_[3];
+
+  my $vref = ref($var) ? \($var->[0]) : \$var;
 
   if (1 and Encode::is_utf8($$vref)) {
     utf8::encode(my $tmp = $$vref);
     $vref = \$tmp;
   }
 
-  if (ref($_[3])) {
-    my $less = (8 - ($_[3]->[1] & 7)) & 7;
-    my $len = ($_[3]->[1] + 7) >> 3;
-    $_[4] .= asn_encode_length(1+$len);
-    $_[4] .= pack("C",$less);
-    $_[4] .= substr($$vref, 0, $len);
+  if (ref($var)) {
+    my $less = (8 - ($var->[1] & 7)) & 7;
+    my $len = ($var->[1] + 7) >> 3;
+    $buf .= asn_encode_length(1+$len);
+    $buf .= pack("C",$less);
+    $buf .= substr($$vref, 0, $len);
     if ($less && $len) {
-      substr($_[4],-1) &= pack("C",(0xff << $less) & 0xff);
+      substr($buf,-1) &= pack("C",(0xff << $less) & 0xff);
     }
   }
   else {
-    $_[4] .= asn_encode_length(1+length $$vref);
-    $_[4] .= pack("C",0);
-    $_[4] .= $$vref;
+    $buf .= asn_encode_length(1+length $$vref);
+    $buf .= pack("C",0);
+    $buf .= $$vref;
   }
+
+  return $buf;
 }
 
 
 sub _enc_string {
+    my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
     blerg "sub _enc_string";
-# 0      1    2       3     4     5      6
-# $optn, $op, $stash, $var, $buf, $loop, $path
 
-  if (1 and Encode::is_utf8($_[3])) {
-    utf8::encode(my $tmp = $_[3]);
-    $_[4] .= asn_encode_length(length $tmp);
-    $_[4] .= $tmp;
-  }
-  else {
-    $_[4] .= asn_encode_length(length $_[3]);
-    $_[4] .= $_[3];
-  }
+    if (Encode::is_utf8($var)) {
+        utf8::encode(my $tmp = $var);
+        $buf .= asn_encode_length(length $tmp);
+        $buf.= $tmp;
+    }
+    else {
+        $buf.= asn_encode_length(length $var);
+        $buf .= $var;
+    }
+
+    return $buf;
 }
 
 
 sub _enc_null {
+    my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
     blerg "sub _enc_null";
-# 0      1    2       3     4     5      6
-# $optn, $op, $stash, $var, $buf, $loop, $path
 
-  $_[4] .= pack("C",0);
+    $buf .= pack("C",0);
+
+    return $buf;
 }
 
 
 sub _enc_object_id {
+    my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
     blerg "sub _enc_object_id";
-# 0      1    2       3     4     5      6
-# $optn, $op, $stash, $var, $buf, $loop, $path
 
-  my @data = ($_[3] =~ /(\d+)/g);
+    my @data = ($var =~ /(\d+)/g);
 
-  if ($_[1]->[cTYPE] == opOBJID) {
-    if(@data < 2) {
-      @data = (0);
+    if ($op->[cTYPE] == opOBJID) {
+        if(@data < 2) {
+        @data = (0);
+        }
+        else {
+        my $first = $data[1] + ($data[0] * 40);
+        splice(@data,0,2,$first);
+        }
     }
-    else {
-      my $first = $data[1] + ($data[0] * 40);
-      splice(@data,0,2,$first);
-    }
-  }
 
-  my $l = length $_[4];
-  $_[4] .= pack("cw*", 0, @data);
-  substr($_[4],$l,1) = asn_encode_length(length($_[4]) - $l - 1);
+    my $l = length $buf;
+    $buf .= pack("cw*", 0, @data);
+    substr($buf,$l,1) = asn_encode_length(length($buf) - $l - 1);
+
+    return $buf;
 }
 
 
 sub _enc_real {
+    my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
     blerg "sub _enc_real";
-# 0      1    2       3     4     5      6
-# $optn, $op, $stash, $var, $buf, $loop, $path
+    # 0      1    2       3     4     5      6
+    # $optn, $op, $stash, $var, $buf, $loop, $path
 
-  # Zero
-  unless ($_[3]) {
-    $_[4] .= pack("C",0);
-    return;
-  }
+    # Zero
+    unless ($var) {
+        $buf .= pack("C",0);
+        return $buf;
+    }
 
-  require POSIX;
 
-  # +oo (well we use HUGE_VAL as Infinity is not avaliable to perl)
-  if ($_[3] >= POSIX::HUGE_VAL()) {
-    $_[4] .= pack("C*",0x01,0x40);
-    return;
-  }
+    # +oo (well we use HUGE_VAL as Infinity is not avaliable to perl)
+    if ($var >= POSIX::HUGE_VAL()) {
+        $buf .= pack("C*",0x01,0x40);
+        return $buf;
+    }
 
-  # -oo (well we use HUGE_VAL as Infinity is not avaliable to perl)
-  if ($_[3] <= - POSIX::HUGE_VAL()) {
-    $_[4] .= pack("C*",0x01,0x41);
-    return;
-  }
+    # -oo (well we use HUGE_VAL as Infinity is not avaliable to perl)
+    if ($var <= - POSIX::HUGE_VAL()) {
+        $buf .= pack("C*",0x01,0x41);
+        return $buf;
+    }
 
-  if (exists $_[0]->{'encode_real'} && $_[0]->{'encode_real'} ne 'binary') {
-    my $tmp = sprintf("%g",$_[3]);
-    $_[4] .= asn_encode_length(1+length $tmp);
-    $_[4] .= pack("C",1); # NR1?
-    $_[4] .= $tmp;
-    return;
-  }
+    # We have a real number.
+    my $first = 0x80;
+    my($mantissa, $exponent) = POSIX::frexp($_[3]);
 
-  # We have a real number.
-  my $first = 0x80;
-  my($mantissa, $exponent) = POSIX::frexp($_[3]);
+    if ($mantissa < 0.0) {
+        $mantissa = -$mantissa;
+        $first |= 0x40;
+    }
+    my($eMant,$eExp);
 
-  if ($mantissa < 0.0) {
-    $mantissa = -$mantissa;
-    $first |= 0x40;
-  }
-  my($eMant,$eExp);
+    while($mantissa > 0.0) {
+        ($mantissa, my $int) = POSIX::modf($mantissa * (1<<8));
+        $eMant .= pack("C",$int);
+    }
+    $exponent -= 8 * length $eMant;
 
-  while($mantissa > 0.0) {
-    ($mantissa, my $int) = POSIX::modf($mantissa * (1<<8));
-    $eMant .= pack("C",$int);
-  }
-  $exponent -= 8 * length $eMant;
+    $eExp = _enc_integer(undef, undef, undef, $exponent, $eExp);
 
-  _enc_integer(undef, undef, undef, $exponent, $eExp);
+    # $eExp will br prefixed by a length byte
+    if (5 > length $eExp) {
+        $eExp =~ s/\A.//s;
+        $first |= length($eExp)-1;
+    }
+    else {
+        $first |= 0x3;
+    }
 
-  # $eExp will br prefixed by a length byte
-  
-  if (5 > length $eExp) {
-    $eExp =~ s/\A.//s;
-    $first |= length($eExp)-1;
-  }
-  else {
-    $first |= 0x3;
-  }
+    $buf .= asn_encode_length(1 + length($eMant) + length($eExp));
+    $buf .= pack("C",$first);
+    $buf .= $eExp;
+    $buf .= $eMant;
 
-  $_[4] .= asn_encode_length(1 + length($eMant) + length($eExp));
-  $_[4] .= pack("C",$first);
-  $_[4] .= $eExp;
-  $_[4] .= $eMant;
+    return $buf;
 }
 
 
 sub _enc_sequence {
+    my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
     blerg "sub _enc_sequence";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
 
-  if (my $ops = $_[1]->[cCHILD]) {
-    my $l = length $_[4];
-    $_[4] .= "\0\0"; # guess
-    if (defined $_[5]) {
-      my $op   = $ops->[0]; # there should only be one
-      my $enc  = $encode[$op->[cTYPE]];
-      my $tag  = $op->[cTAG];
-      my $loop = $op->[cLOOP];
+    if (my $ops = $op->[cCHILD]) {
+        my $l = length $buf;
+        $buf .= "\0\0"; # guess
+        if (defined $loop) {
+            my $op   = $ops->[0]; # there should only be one
+            my $enc  = $encode[$op->[cTYPE]];
+            my $tag  = $op->[cTAG];
+            my $loop = $op->[cLOOP];
 
-      push @{$_[6]}, -1;
+            # Horseshit 6 == $path
+            push @{$_[6]}, -1;
 
-      foreach my $var (@{$_[3]}) {
-    $_[6]->[-1]++;
-    $_[4] .= $tag;
+            foreach my $var (@{$var}) {
+                $_[6]->[-1]++;
+                $buf .= $tag;
 
-    &{$enc}(
-      $_[0], # $optn
-      $op,   # $op
-      $_[2], # $stash
-      $var,  # $var
-      $_[4], # $buf
-      $loop, # $loop
-      $_[6], # $path
-    );
-      }
-      pop @{$_[6]};
+                # added the buf, maybe not
+                $buf = &{$enc}(
+                    $optn,
+                    $op,
+                    $stash,
+                    $var,
+                    $buf,
+                    $loop,
+                    $path,
+                );
+            }
+
+            pop @{$_[6]};
+        }
+
+        else {
+            $buf = _encode(
+                $optn,
+                $op->[cCHILD],
+                defined($var)
+                    ? $var
+                    : $stash,
+                $path,
+                $buf,
+            );
+        }
+
+        substr($buf,$l,2) = asn_encode_length(length($buf) - $l - 2);
     }
+
     else {
-      _encode($_[0],$_[1]->[cCHILD], defined($_[3]) ? $_[3] : $_[2], $_[6], $_[4]);
+        $buf .= asn_encode_length(length $_[3]);
+        $buf .= $var;
     }
-    substr($_[4],$l,2) = asn_encode_length(length($_[4]) - $l - 2);
-  }
-  else {
-    $_[4] .= asn_encode_length(length $_[3]);
-    $_[4] .= $_[3];
-  }
+
+    return $buf;
 }
 
 
 my %_enc_time_opt = ( utctime => 1, withzone => 0, raw => 2);
 
 sub _enc_time {
+    my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
     blerg "sub _enc_time";
-# 0      1    2       3     4     5      6
-# $optn, $op, $stash, $var, $buf, $loop, $path
 
-  my $mode = $_enc_time_opt{$_[0]->{'encode_time'} || ''} || 0;
+    my $mode = $_enc_time_opt{$optn->{'encode_time'} || ''} || 0;
 
-  if ($mode == 2) {
-    $_[4] .= asn_encode_length(length $_[3]);
-    $_[4] .= $_[3];
-    return;
-  }
+    if ($mode == 2) {
+        $buf .= asn_encode_length(length $var);
+        $buf .= $var;
+        return;
+    }
 
-  my $time;
-  my @time;
-  my $offset;
-  my $isgen = $_[1]->[cTYPE] == opGTIME;
+    my $time;
+    my @time;
+    my $offset;
+    my $isgen = $op->[cTYPE] == opGTIME;
 
-  if (ref($_[3])) {
-    $offset = int($_[3]->[1] / 60);
-    $time = $_[3]->[0] + $_[3]->[1];
+  if (ref($var)) {
+    $offset = int($var->[1] / 60);
+    $time = $var->[0] + $var->[1];
   }
   elsif ($mode == 0) {
-    if (exists $_[0]->{'encode_timezone'}) {
-      $offset = int($_[0]->{'encode_timezone'} / 60);
-      $time = $_[3] + $_[0]->{'encode_timezone'};
+    if (exists $optn->{'encode_timezone'}) {
+      $offset = int($optn->{'encode_timezone'} / 60);
+      $time = $var + $optn->{'encode_timezone'};
     }
     else {
-      @time = localtime($_[3]);
-      my @g = gmtime($_[3]);
-      
+      @time = localtime($var);
+      my @g = gmtime($var);
+
       $offset = ($time[1] - $g[1]) + ($time[2] - $g[2]) * 60;
-      $time = $_[3] + $offset*60;
+      $time = $var + $offset*60;
     }
   }
   else {
-    $time = $_[3];
+    $time = $var;
   }
   @time = gmtime($time);
   $time[4] += 1;
@@ -1049,77 +1075,81 @@ sub _enc_time {
     $tmp .= substr($sp,-4) unless $sp =~ /\.000$/;
   }
   $tmp .= $offset ? sprintf("%+03d%02d",$offset / 60, abs($offset % 60)) : 'Z';
-  $_[4] .= asn_encode_length(length $tmp);
-  $_[4] .= $tmp;
+  $buf .= asn_encode_length(length $tmp);
+  $buf .= $tmp;
+
+  return $buf;
 }
 
 
 sub _enc_utf8 {
+    my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
     blerg "sub _enc_utf8";
-# 0      1    2       3     4     5      6
-# $optn, $op, $stash, $var, $buf, $loop, $path
 
-  if (1) {
-    my $tmp = $_[3];
+    my $tmp = $var;
     utf8::upgrade($tmp) unless Encode::is_utf8($tmp);
     utf8::encode($tmp);
-    $_[4] .= asn_encode_length(length $tmp);
-    $_[4] .= $tmp;
-  }
-  else {
-    $_[4] .= asn_encode_length(length $_[3]);
-    $_[4] .= $_[3];
-  }
+    $buf .= asn_encode_length(length $tmp);
+    $buf .= $tmp;
+
+    return $buf;
 }
 
 
 sub _enc_any {
+    my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
     blerg "sub _enc_any";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
 
   my $handler;
-  if ($_[1]->[cDEFINE] && $_[2]->{$_[1]->[cDEFINE]}) {
-    $handler=$_[0]->{oidtable}{$_[2]->{$_[1]->[cDEFINE]}};
-    $handler=$_[0]->{handlers}{$_[1]->[cVAR]}{$_[2]->{$_[1]->[cDEFINE]}} unless $handler;
+  if ($op->[cDEFINE] && $stash->{$op->[cDEFINE]}) {
+    $handler=$optn->{oidtable}{$stash->{$op->[cDEFINE]}};
+    $handler=$optn->{handlers}{$op->[cVAR]}{$stash->{$op->[cDEFINE]}} unless $handler;
   }
   if ($handler) {
-    $_[4] .= $handler->encode($_[3]);
+    $buf .= $handler->encode($_[3]);
   } else {
-    $_[4] .= $_[3];
+    $buf .= $_[3];
   }
+
+  return $buf;
 }
 
 
 sub _enc_choice {
+    my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
     blerg "sub _enc_choice";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
 
-  my $stash = defined($_[3]) ? $_[3] : $_[2];
+  $stash = defined($_[3]) ? $_[3] : $_[2];
   for my $op (@{$_[1]->[cCHILD]}) {
     next if $op->[cTYPE] == opEXTENSIONS;
     my $var = defined $op->[cVAR] ? $op->[cVAR] : $op->[cCHILD]->[0]->[cVAR];
 
     if (exists $stash->{$var}) {
       push @{$_[6]}, $var;
-      _encode($_[0],[$op], $stash, $_[6], $_[4]);
+      $buf = _encode($_[0],[$op], $stash, $_[6], $buf);
       pop @{$_[6]};
-      return;
+      return $buf;
     }
   }
-  croak("No value found for CHOICE " . join(".", @{$_[6]}));
+  die "No value found for CHOICE " . join(".", @{$_[6]});
 }
 
 
 sub _enc_bcd {
+    my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
     blerg "_enc_bcd";
 # 0      1    2       3     4     5      6
 # $optn, $op, $stash, $var, $buf, $loop, $path
   my $str = ("$_[3]" =~ /^(\d+)/) ? $1 : "";
   $str .= "F" if length($str) & 1;
-  $_[4] .= asn_encode_length(length($str) / 2);
-  $_[4] .= pack("H*", $str);
+  $buf .= asn_encode_length(length($str) / 2);
+  $buf .= pack("H*", $str);
+
+  return $buf;
 }
 
 
@@ -1226,7 +1256,7 @@ sub asn_read { # $fh, $buffer, $offset
 
   if ($_[2]) {
     if ($_[2] > length $_[1]) {
-      ::carp("Offset beyond end of buffer");
+      die "Offset beyond end of buffer";
       return;
     }
     substr($_[1],$_[2]) = '';
@@ -1712,8 +1742,6 @@ sub _dec_real {
   my $first = unpack("C",substr($_[4],$_[5],1));
   if ($first & 0x80) {
     # A real number
-
-    require POSIX;
 
     my $exp;
     my $expLen = $first & 0x3;
