@@ -408,6 +408,9 @@ my $tagdefault = 1; # 0:IMPLICIT , 1:EXPLICIT default
 
 my $reserved = join("|", reverse sort grep { /\w/ } keys %reserved);
 
+my @ctr;
+@ctr[opBITSTR, opSTRING, opUTF8] = (\&_ctr_bitstring,\&_ctr_string,\&_ctr_string);
+
 # Manage current position in lexer, make local
 my $pos;
 my $last_pos;
@@ -512,13 +515,13 @@ sub encode {
 
 sub asn_encode_tag {
     blerg "sub asn_encode";
-  $_[0] >> 8
-    ? $_[0] & 0x8000
-      ? $_[0] & 0x800000
-    ? pack("V",$_[0])
-    : substr(pack("V",$_[0]),0,3)
-      : pack("v", $_[0])
-    : pack("C",$_[0]);
+    $_[0] >> 8
+        ? $_[0] & 0x8000
+            ? $_[0] & 0x800000
+                ? pack("V",$_[0])
+                : substr(pack("V",$_[0]),0,3)
+            : pack("v", $_[0])
+        : pack("C",$_[0]);
 }
 
 
@@ -529,13 +532,17 @@ sub asn_encode_tag {
 sub asn_encode_length {
     blerg "sub asn_encode_length";
 
-  if($_[0] >> 7) {
-    my $lenlen = &num_length;
+    if($_[0] >> 7) {
+        my $lenlen = &num_length;
 
-    return pack("Ca*", $lenlen | 0x80,  substr(pack("N",$_[0]), -$lenlen));
-  }
+        return pack(
+            "Ca*",
+            $lenlen | 0x80,
+            substr(pack("N" ,$_[0]), -$lenlen)
+        );
+    }
 
-  return pack("C", $_[0]);
+    return pack("C", $_[0]);
 }
 
 
@@ -545,10 +552,9 @@ sub asn_encode_length {
 
 sub decode {
     blerg "sub decode";
-  my $self  = shift;
-  my $ret;
+    my $self  = shift;
+    my $ret;
 
-  eval {
     my (%stash, $result);
     my $script = $self->{script};
     my $stash = \$result;
@@ -564,20 +570,19 @@ sub decode {
     }
 
     _decode(
-    $self->{options},
-    $self->{script},
-    $stash,
-    0,
-    length $_[0], 
-    undef,
-    {},
-    $_[0]);
+        $self->{options},
+        $self->{script},
+        $stash,
+        0,
+        length $_[0],
+        undef,
+        {},
+        $_[0]
+    );
 
     $ret = $result;
-    1;
-  } or $self->{'error'} = $@ || 'Unknown error';
 
-  $ret;
+    return $ret;
 }
 
 
@@ -660,7 +665,6 @@ sub i2osp {
 sub os2ip {
     blerg "sub os2ip";
     my($os, $biclass) = @_;
-    # eval "require $biclass";
     my $base = $biclass->new(256);
     my $result = $biclass->new(0);
     my $neg = unpack("C",$os) >= 0x80
@@ -1099,52 +1103,56 @@ sub _enc_utf8 {
 sub _enc_any {
     my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
     blerg "sub _enc_any";
-# 0      1    2       3     4     5      6
-# $optn, $op, $stash, $var, $buf, $loop, $path
 
-  my $handler;
-  if ($op->[cDEFINE] && $stash->{$op->[cDEFINE]}) {
-    $handler=$optn->{oidtable}{$stash->{$op->[cDEFINE]}};
-    $handler=$optn->{handlers}{$op->[cVAR]}{$stash->{$op->[cDEFINE]}} unless $handler;
-  }
-  if ($handler) {
-    $buf .= $handler->encode($_[3]);
-  } else {
-    $buf .= $_[3];
-  }
+    my $handler;
+    if ($op->[cDEFINE] && $stash->{$op->[cDEFINE]}) {
+        $handler = $optn->{oidtable}{ $stash->{ $op->[cDEFINE] } };
 
-  return $buf;
+        $handler = $optn->{handlers}{ $op->[cVAR] }{ $stash->{ $op->[cDEFINE] } }
+            unless $handler;
+    }
+
+    if ($handler) {
+        $buf .= $handler->encode($var);
+    }
+    else {
+        $buf .= $var;
+    }
+
+    return $buf;
 }
 
 
 sub _enc_choice {
     my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
     blerg "sub _enc_choice";
-# 0      1    2       3     4     5      6
-# $optn, $op, $stash, $var, $buf, $loop, $path
 
-  $stash = defined($_[3]) ? $_[3] : $_[2];
-  for my $op (@{$_[1]->[cCHILD]}) {
-    next if $op->[cTYPE] == opEXTENSIONS;
-    my $var = defined $op->[cVAR] ? $op->[cVAR] : $op->[cCHILD]->[0]->[cVAR];
+    $stash = defined($var) ? $var : $stash;
 
-    if (exists $stash->{$var}) {
-      push @{$_[6]}, $var;
-      $buf = _encode($_[0],[$op], $stash, $_[6], $buf);
-      pop @{$_[6]};
-      return $buf;
+    for my $op (@{ $op->[cCHILD] }) {
+        next if $op->[cTYPE] == opEXTENSIONS;
+        my $var = defined $op->[cVAR] ? $op->[cVAR] : $op->[cCHILD]->[0]->[cVAR];
+
+        if (exists $stash->{$var}) {
+        # Horse shit path
+        push @{$_[6]}, $var;
+        # Horse shit path
+        $buf = _encode($optn,[$op], $stash, $_[6], $buf);
+        # Horse shit path
+        pop @{$_[6]};
+        return $buf;
+        }
     }
-  }
-  die "No value found for CHOICE " . join(".", @{$_[6]});
+    die "No value found for CHOICE " . join(".", @{$_[6]});
 }
 
 
 sub _enc_bcd {
     my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
     blerg "_enc_bcd";
-# 0      1    2       3     4     5      6
-# $optn, $op, $stash, $var, $buf, $loop, $path
-  my $str = ("$_[3]" =~ /^(\d+)/) ? $1 : "";
+
+  my $str = ($var =~ /^(\d+)/) ? $1 : "";
+
   $str .= "F" if length($str) & 1;
   $buf .= asn_encode_length(length($str) / 2);
   $buf .= pack("H*", $str);
@@ -1156,253 +1164,260 @@ sub _enc_bcd {
 
 sub asn_recv { # $socket, $buffer, $flags
     blerg "asn_recv";
+    my ($socket, $buffer, $flags) = @_;
 
-  my $peer;
-  my $buf;
-  my $n = 128;
-  my $pos = 0;
-  my $depth = 0;
-  my $len = 0;
-  my($tmp,$tb,$lb);
+    my $peer;
+    my $buf;
+    my $n = 128;
+    my $pos = 0;
+    my $depth = 0;
+    my $len = 0;
+    my($tmp,$tb,$lb);
 
-  MORE:
-  for(
-    $peer = recv($_[0],$buf,$n,MSG_PEEK);
-    defined $peer;
-    $peer = recv($_[0],$buf,$n<<=1,MSG_PEEK)
-  ) {
+    MORE:
+    for(
+        $peer = recv($socket, $buf ,$n, MSG_PEEK);
+        defined $peer;
+        $peer = recv($socket, $buf, $n<<=1, MSG_PEEK)
+    ) {
 
-    if ($depth) { # Are we searching of "\0\0"
+        if ($depth) { # Are we searching of "\0\0"
+            unless (2+$pos <= length $buf) {
+            next MORE if $n == length $buf;
+            last MORE;
+        }
 
-      unless (2+$pos <= length $buf) {
-    next MORE if $n == length $buf;
-    last MORE;
-      }
+        if (substr($buf, $pos, 2) eq "\0\0") {
+            unless (--$depth) {
+                $len = $pos + 2;
+                last MORE;
+            }
+        }
+        }
 
-      if(substr($buf,$pos,2) eq "\0\0") {
-    unless (--$depth) {
-      $len = $pos + 2;
-      last MORE;
-    }
-      }
-    }
+        # If we can decode a tag and length we can detemine the length
+        ($tb,$tmp) = asn_decode_tag(substr($buf, $pos));
+        unless ($tb || $pos+$tb < length $buf) {
+            next MORE if $n == length $buf;
+            last MORE;
+        }
 
-    # If we can decode a tag and length we can detemine the length
-    ($tb,$tmp) = asn_decode_tag(substr($buf,$pos));
-    unless ($tb || $pos+$tb < length $buf) {
-      next MORE if $n == length $buf;
-      last MORE;
-    }
+        if (unpack("C",substr($buf, $pos+$tb, 1)) == 0x80) {
+            # indefinite length, grrr!
+            $depth++;
+            $pos += $tb + 1;
+            redo MORE;
+        }
 
-    if (unpack("C",substr($buf,$pos+$tb,1)) == 0x80) {
-      # indefinite length, grrr!
-      $depth++;
-      $pos += $tb + 1;
-      redo MORE;
-    }
+        ($lb,$len) = asn_decode_length(substr($buf, $pos+$tb));
 
-    ($lb,$len) = asn_decode_length(substr($buf,$pos+$tb));
-
-    if ($lb) {
-      if ($depth) {
-    $pos += $tb + $lb + $len;
-    redo MORE;
-      }
-      else {
-    $len += $tb + $lb + $pos;
-    last MORE;
-      }
-    }
-  }
-
-  if (defined $peer) {
-    if ($len > length $buf) {
-      # Check we can read the whole element
-      goto error
-    unless defined($peer = recv($_[0],$buf,$len,MSG_PEEK));
-
-      if ($len > length $buf) {
-    # Cannot get whole element
-    $_[1]='';
-    return $peer;
-      }
-    }
-    elsif ($len == 0) {
-      $_[1] = '';
-      return $peer;
+        if ($lb) {
+            if ($depth) {
+                $pos += $tb + $lb + $len;
+                redo MORE;
+            }
+            else {
+                $len += $tb + $lb + $pos;
+                last MORE;
+            }
+        }
     }
 
-    if ($_[2] & MSG_PEEK) {
-      $_[1] =  substr($buf,0,$len);
-    }
-    elsif (!defined($peer = recv($_[0],$_[1],$len,0))) {
-      goto error;
+    if (defined $peer) {
+        if ($len > length $buf) {
+        # Check we can read the whole element
+            goto error
+                unless defined($peer = recv($socket, $buf, $len, MSG_PEEK));
+
+            if ($len > length $buf) {
+                # Cannot get whole element
+                $_[1] = '';
+                return $peer;
+            }
+        }
+        elsif ($len == 0) {
+            $_[1] = '';
+            return $peer;
+        }
+
+        if ($flags & MSG_PEEK) {
+            $_[1] = substr($buf, 0, $len);
+        }
+        elsif (!defined($peer = recv($socket, $_[1], $len, 0))) {
+            goto error;
+        }
+
+        return $peer;
     }
 
-    return $peer;
-  }
-
-error:
-    $_[1] = undef;
+    error:
+        $_[1] = undef;
 }
 
 sub asn_read { # $fh, $buffer, $offset
     blerg "sub asn_read";
+    my ($fh, $buffer, $offset) = @_;
 
-  # We need to read one packet, and exactly only one packet.
-  # So we have to read the first few bytes one at a time, until
-  # we have enough to decode a tag and a length. We then know
-  # how many more bytes to read
+    # We need to read one packet, and exactly only one packet.
+    # So we have to read the first few bytes one at a time, until
+    # we have enough to decode a tag and a length. We then know
+    # how many more bytes to read
 
-  if ($_[2]) {
-    if ($_[2] > length $_[1]) {
-      die "Offset beyond end of buffer";
-      return;
-    }
-    substr($_[1],$_[2]) = '';
-  }
-  else {
-    $_[1] = '';
-  }
-
-  my $pos = 0;
-  my $need = 0;
-  my $depth = 0;
-  my $ch;
-  my $n;
-  my $e;
-  
-
-  while(1) {
-    $need = ($pos + ($depth * 2)) || 2;
-
-    while(($n = $need - length $_[1]) > 0) {
-      $e = sysread($_[0],$_[1],$n,length $_[1]) or
-    goto READ_ERR;
-    }
-
-    my $tch = unpack("C",substr($_[1],$pos++,1));
-    # Tag may be multi-byte
-    if(($tch & 0x1f) == 0x1f) {
-      my $ch;
-      do {
-        $need++;
-    while(($n = $need - length $_[1]) > 0) {
-      $e = sysread($_[0],$_[1],$n,length $_[1]) or
-          goto READ_ERR;
-    }
-    $ch = unpack("C",substr($_[1],$pos++,1));
-      } while($ch & 0x80);
-    }
-
-    $need = $pos + 1;
-
-    while(($n = $need - length $_[1]) > 0) {
-      $e = sysread($_[0],$_[1],$n,length $_[1]) or
-      goto READ_ERR;
-    }
-
-    my $len = unpack("C",substr($_[1],$pos++,1));
-
-    if($len & 0x80) {
-      unless ($len &= 0x7f) {
-    $depth++;
-    next;
-      }
-      $need = $pos + $len;
-
-      while(($n = $need - length $_[1]) > 0) {
-    $e = sysread($_[0],$_[1],$n,length $_[1]) or
-        goto READ_ERR;
-      }
-
-      $pos += $len + unpack("N", "\0" x (4 - $len) . substr($_[1],$pos,$len));
-    }
-    elsif (!$len && !$tch) {
-      die "Bad ASN PDU" unless $depth;
-      unless (--$depth) {
-    last;
-      }
+    if ($offset) {
+        if ($offset > length $_[1]) {
+            die "Offset beyond end of buffer";
+            return;
+        }
+        substr($_[1], $offset) = '';
     }
     else {
-      $pos += $len;
+        $_[1] = '';
     }
 
-    last unless $depth;
-  }
+    my $pos = 0;
+    my $need = 0;
+    my $depth = 0;
+    my $ch;
+    my $n;
+    my $e;
 
-  while(($n = $pos - length $_[1]) > 0) {
-    $e = sysread($_[0],$_[1],$n,length $_[1]) or
-      goto READ_ERR;
-  }
+    while(1) {
+        $need = ($pos + ($depth * 2)) || 2;
 
-  return length $_[1];
+        while(($n = $need - length $_[1]) > 0) {
+            $e = sysread($fh, $_[1], $n, length $_[1]) or
+            goto READ_ERR;
+        }
 
-READ_ERR:
-    $@ = defined($e) ? "Unexpected EOF" : "I/O Error $!"; # . CORE::unpack("H*",$_[1]);
-    return undef;
+        my $tch = unpack("C",substr($_[1],$pos++,1));
+        # Tag may be multi-byte
+        if(($tch & 0x1f) == 0x1f) {
+            my $ch;
+            do {
+                $need++;
+                while(($n = $need - length $_[1]) > 0) {
+                    $e = sysread($fh, $_[1], $n, length $_[1]) or
+                    goto READ_ERR;
+                }
+                $ch = unpack("C", substr($_[1], $pos++, 1));
+            }
+            while($ch & 0x80);
+        }
+
+        $need = $pos + 1;
+
+        while(($n = $need - length $_[1]) > 0) {
+            $e = sysread($fh, $_[1], $n, length $_[1]) or
+            goto READ_ERR;
+        }
+
+        my $len = unpack("C",substr($_[1],$pos++,1));
+
+        if($len & 0x80) {
+            unless ($len &= 0x7f) {
+                $depth++;
+                next;
+            }
+            $need = $pos + $len;
+
+            while(($n = $need - length $_[1]) > 0) {
+                $e = sysread($fh, $_[1], $n, length $_[1]) or
+                    goto READ_ERR;
+            }
+
+            $pos += $len + unpack("N", "\0" x (4 - $len)
+                . substr($_[1], $pos, $len));
+        }
+
+        elsif (!$len && !$tch) {
+            die "Bad ASN PDU" unless $depth;
+            unless (--$depth) {
+                last;
+            }
+        }
+        else {
+            $pos += $len;
+        }
+
+        last unless $depth;
+    }
+
+    while(($n = $pos - length $_[1]) > 0) {
+        $e = sysread($fh, $_[1], $n, length $_[1]) or
+            goto READ_ERR;
+    }
+
+    return length $_[1];
+
+    READ_ERR:
+        $@ = defined($e)
+            ? "Unexpected EOF"
+            : "I/O Error $!"; # . CORE::unpack("H*",$_[1]);
+        return;
 }
 
 sub asn_send { # $sock, $buffer, $flags, $to
     blerg "sub asn_send";
+    my ($sock, $buffer, $flags, $to) = @_;
 
-  @_ == 4
-    ? send($_[0],$_[1],$_[2],$_[3])
-    : send($_[0],$_[1],$_[2]);
+    @_ == 4
+        ? send($sock, $buffer, $flags, $to)
+        : send($sock, $buffer, $flags);
 }
 
 sub asn_write { # $sock, $buffer
     blerg "sub asn_write";
+    my ($sock, $buffer) = @_;
 
-  syswrite($_[0],$_[1], length $_[1]);
+    syswrite($sock ,$buffer, length $buffer);
 }
 
 sub asn_get { # $fh
     blerg "sub asn_get";
 
-  my $fh = ref($_[0]) ? $_[0] : \($_[0]);
-  my $href = \%{*$fh};
+    my $fh = ref($_[0]) ? $_[0] : \($_[0]);
+    my $href = \%{*$fh};
 
-  $href->{'asn_buffer'} = '' unless exists $href->{'asn_buffer'};
+    $href->{'asn_buffer'} = '' unless exists $href->{'asn_buffer'};
 
-  my $need = delete $href->{'asn_need'} || 0;
-  while(1) {
-    next if $need;
-    my($tb,$tag) = asn_decode_tag($href->{'asn_buffer'}) or next;
-    my($lb,$len) = asn_decode_length(substr($href->{'asn_buffer'},$tb,8)) or next;
-    $need = $tb + $lb + $len;
-  }
-  continue {
-    if ($need && $need <= length $href->{'asn_buffer'}) {
-      my $ret = substr($href->{'asn_buffer'},0,$need);
-      substr($href->{'asn_buffer'},0,$need) = '';
-      return $ret;
+    my $need = delete $href->{'asn_need'} || 0;
+    while(1) {
+        next if $need;
+        my($tb, $tag) = asn_decode_tag($href->{'asn_buffer'}) or next;
+        my($lb, $len) = asn_decode_length(substr($href->{'asn_buffer'}, $tb, 8)) or next;
+        $need = $tb + $lb + $len;
     }
+    continue {
+        if ($need && $need <= length $href->{'asn_buffer'}) {
+            my $ret = substr($href->{'asn_buffer'}, 0, $need);
+            substr($href->{'asn_buffer'}, 0, $need) = '';
+            return $ret;
+        }
 
-    my $get = $need > 1024 ? $need : 1024;
+        my $get = $need > 1024 ? $need : 1024;
 
-    sysread($_[0], $href->{'asn_buffer'}, $get, length $href->{'asn_buffer'})
-      or return undef;
-  }
+        sysread($fh, $href->{'asn_buffer'}, $get, length $href->{'asn_buffer'})
+            or return;
+    }
 }
 
 sub asn_ready { # $fh
     blerg "sub asn_ready";
 
-  my $fh = ref($_[0]) ? $_[0] : \($_[0]);
-  my $href = \%{*$fh};
+    my $fh = ref($_[0]) ? $_[0] : \($_[0]);
+    my $href = \%{*$fh};
 
-  return 0 unless exists $href->{'asn_buffer'};
-  
-  return $href->{'asn_need'} <= length $href->{'asn_buffer'}
-    if exists $href->{'asn_need'};
+    return 0 unless exists $href->{'asn_buffer'};
 
-  my($tb,$tag) = asn_decode_tag($href->{'asn_buffer'}) or return 0;
-  my($lb,$len) = asn_decode_length(substr($href->{'asn_buffer'},$tb,8)) or return 0;
+    return $href->{'asn_need'} <= length $href->{'asn_buffer'}
+        if exists $href->{'asn_need'};
 
-  $href->{'asn_need'} = $tb + $lb + $len;
+    my($tb,$tag) = asn_decode_tag($href->{'asn_buffer'}) or return 0;
+    my($lb,$len) = asn_decode_length(substr($href->{'asn_buffer'},$tb,8)) or return 0;
 
-  $href->{'asn_need'} <= length $href->{'asn_buffer'};
+    $href->{'asn_need'} = $tb + $lb + $len;
+
+    $href->{'asn_need'} <= length $href->{'asn_buffer'};
 }
 
 # These are the subs that do the decode, they are called with
@@ -1431,8 +1446,6 @@ my @decode = (
   \&_dec_bcd,
 );
 
-my @ctr;
-@ctr[opBITSTR, opSTRING, opUTF8] = (\&_ctr_bitstring,\&_ctr_string,\&_ctr_string);
 
 
 sub _decode {
@@ -1572,7 +1585,6 @@ sub _decode {
           }
 
           unless (length $cop->[cTAG]) {
-        eval {
           _decode(
             $optn,
             [$cop],
@@ -1592,8 +1604,6 @@ sub _decode {
                       ? ($$stash={}) : $stash;
 
           @{$nstash}{keys %tmp_stash} = values %tmp_stash;
-
-        } or next;
 
         $pos = $npos+$len+$indef;
 
@@ -1770,10 +1780,6 @@ sub _dec_real {
   elsif($first & 0x40) {
     $_[3] =   POSIX::HUGE_VAL(),return if $first == 0x40;
     $_[3] = - POSIX::HUGE_VAL(),return if $first == 0x41;
-  }
-  elsif(substr($_[4],$_[5],$_[6]) =~ /^.([-+]?)0*(\d+(?:\.\d+(?:[Ee][-+]?\d+)?)?)$/s) {
-    $_[3] = eval "$1$2";
-    return;
   }
 
   die "REAL decode error\n";

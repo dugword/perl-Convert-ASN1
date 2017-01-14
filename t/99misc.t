@@ -49,8 +49,10 @@ ASN1
 
   my $OCSPREQDER = pack("H*", $hexdata);
 
-  my $ocspreq = $asn_ocspreq->decode($OCSPREQDER);
-  my $err = $asn_ocspreq->error;
+  eval {
+    my $ocspreq = $asn_ocspreq->decode($OCSPREQDER);
+  };
+  my $err = $@;
   $err =~ s/ at .*line \d.*//s if $err;
   stest 1, "decode error 85 87", $err;
 
