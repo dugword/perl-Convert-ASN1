@@ -1,0 +1,16 @@
+use v6;
+
+use lib 'lib';
+
+use Convert::ASN1:from<Perl5> (':all');
+use Convert::ASN1P6 :ALL;
+
+my $foo = asn_encode_tag(ASN_BOOLEAN).encode();
+
+say $foo;
+
+my $bar = asn-encode-tag(ASN_BOOLEAN);
+
+say $bar;
+
+say 'success' if $foo == $bar;

@@ -1,64 +1,8 @@
-use Data::Dump;
+use lib './';
+use Fancy::Utilities;
+# use Foo;
 
-my %new_type = 
-    split(/[\t\n]\s*/,
-      q(10    SEQUENCE
-        01    BOOLEAN
-        0A    ENUM
-        0D    RELATIVE-OID
-        11    SET
-        02    INTEGER
-        03    BIT STRING
-        C0    [PRIVATE %d]
-        04    STRING
-        40    [APPLICATION %d]
-        05    NULL
-        06    OBJECT ID
-        80    [CONTEXT %d]
-      )
-    );
-
-my %type = (
-    split(/[\t\n]\s*/,
-      q(10    SEQUENCE
-        01    BOOLEAN
-        0A    ENUM
-        0D    RELATIVE-OID
-        11    SET
-        02    INTEGER
-        03    BIT STRING
-        C0    [PRIVATE %d]
-        04    STRING
-        40    [APPLICATION %d]
-        05    NULL
-        06    OBJECT ID
-        80    [CONTEXT %d]
-      )
-    )
-  );
-
-dd \%type;
-
-
-
-my %type = (
-  split(/[\t\n]\s*/,
-    q(10	SEQUENCE
-      01	BOOLEAN
-      0A	ENUM
-      0D	RELATIVE-OID
-      11	SET
-      02	INTEGER
-      03	BIT STRING
-      C0	[PRIVATE %d]
-      04	STRING
-      40	[APPLICATION %d]
-      05	NULL
-      06	OBJECT ID
-      80	[CONTEXT %d]
-    )
-  )
-);
-
-dd \new_type;
-dd \%type;
+# Fancy::Utilities::lolgreet('Jnthn');
+say Fancy::Utilities::lolgreet('foo');
+# bar();
+# Foo::bar();
