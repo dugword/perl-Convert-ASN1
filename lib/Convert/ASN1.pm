@@ -2664,7 +2664,6 @@ sub my_verify {
 sub verify {
     blerg "sub verify";
     my $tree = shift or return;
-    my $err = "";
 
     # Well it parsed correctly, now we
     #  - check references exist
@@ -2677,16 +2676,17 @@ sub verify {
         my $path = "";
         my $idx = 0;
 
-        while($ops) {
+        while(1) {
+
             if ($idx < @$ops) {
                 my $op = $ops->[$idx++];
-                my $var;
+                my $var = $op->[cVAR];
 
-                if (defined ($var = $op->[cVAR])) {
-
-                    $err .= "$name: $path.$var used multiple times\n"
-                    if $stash->{$var}++;
-
+                if (defined $var) {
+                    $stash->{$var}++;
+                    if ($stash->{$var} > 1) {
+                        die "$name: $path.$var used multiple times";
+                    }
                 }
 
                 if (defined $op->[cCHILD]) {
@@ -2716,8 +2716,7 @@ sub verify {
         }
     }
 
-  die $err if length $err;
-  $tree;
+    return $tree;
 }
 
 sub expand_ops {

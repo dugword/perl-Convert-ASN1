@@ -1,7 +1,6 @@
 sub verify {
     blerg "sub verify";
     my $tree = shift or return;
-    my $err = "";
 
     # Well it parsed correctly, now we
     #  - check references exist
@@ -14,35 +13,72 @@ sub verify {
         my $path = "";
         my $idx = 0;
 
-        while($ops) {
+        while(1) {
+
             if ($idx < @$ops) {
                 my $op = $ops->[$idx++];
-                my $var;
+                my $var = $op->[cVAR];
 
-                if (defined ($var = $op->[cVAR])) {
-
-                    $err .= "$name: $path.$var used multiple times\n"
-                    if $stash->{$var}++;
-
+                if (defined $var) {
+                    $stash->{$var}++;
+                    if ($stash->{$var} > 1) {
+                        die "$name: $path.$var used multiple times";
+                    }
                 }
 
                 if (defined $op->[cCHILD]) {
-                    push @scope, [$stash, $path, $ops, $idx];
-                    if (defined $var) {
-                        $stash = {};
-                        $path .= "." . $var;
+
+                    if (ref $op->[cCHILD]) {
+                        push @scope, [$stash, $path, $ops, $idx];
+                        if (defined $var) {
+                            $stash = {};
+                            $path .= "." . $var;
+                        }
+                        $idx = 0;
+                        $ops = $op->[cCHILD];
                     }
-                    $idx = 0;
-                    $ops = $op->[cCHILD];
+
+                    elsif ($op->[cTYPE] eq 'COMPONENTS') {
+                        splice(@$ops, --$idx, 1, expand_ops($tree, $op->[cCHILD]));
+                    }
+
+                    else {
+                        die "Internal error\n";
+                    }
                 }
             }
             else {
                 my $s = pop @scope or last;
-                ($stash,$path,$ops,$idx) = @$s;
+                ($stash, $path, $ops, $idx) = @$s;
             }
         }
     }
 
-  die $err if length $err;
-  $tree;
+    return $tree;
+}
+
+sub expand_ops {
+    blerg "sub expand_ops";
+    my $tree = shift;
+    my $want = shift;
+    my $seen = shift || { };
+
+    die "COMPONENTS OF loop $want\n" if $seen->{$want}++;
+    die "Undefined macro $want\n" unless exists $tree->{$want};
+    my $ops = $tree->{$want};
+
+    die "Bad macro for COMPUNENTS OF '$want'\n"
+        unless @$ops == 1
+            && ($ops->[0][cTYPE] eq 'SEQUENCE' || $ops->[0][cTYPE] eq 'SET')
+            && ref $ops->[0][cCHILD];
+    $ops = $ops->[0][cCHILD];
+
+    for(my $idx = 0 ; $idx < @$ops ; ) {
+        my $op = $ops->[$idx++];
+        if ($op->[cTYPE] eq 'COMPONENTS') {
+            splice(@$ops,--$idx,1,expand_ops($tree, $op->[cCHILD], $seen));
+        }
+    }
+
+    return @$ops;
 }
