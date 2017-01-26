@@ -7,6 +7,7 @@ package Convert::ASN1;
 use 5.024;
 use strict;
 use warnings;
+no warnings 'recursion';
 
 use Data::Dump;
 
@@ -2279,11 +2280,31 @@ sub xxparse {
     my $val;
     $ss[$ssp] = $state;
 
-    while(1) {
-        unless ($index = $defred[$state]) {
+    my $parse_loop;
+    open my $fh, '>:encoding(UTF-8)', 'index.data';
+    my %index_stats;
+    $parse_loop = sub {
 
+        my $char = shift;
+        my $state = shift;
+        my $index = shift;
+        my $lval = shift;
+
+        # $index_stats{$index}++;
+
+        my $unless_loop;
+        $unless_loop = sub {
+
+            my $char = shift;
+            my $lex = shift;
+            my $state = shift;
+            my $index = shift;
+            my $lval = shift;
+            my $parsed;
+
+            say "Char => $char";
             if ($char < 0) {
-                my $item = shift @lex;
+                my $item = shift @$lex;
                 $char = $item->{type};
                 $lval = $item->{lval};
 
@@ -2299,7 +2320,8 @@ sub xxparse {
                 $ss[++$ssp] = $state = $table[$index];
                 $vs[++$vsp] = $lval;
                 $char = (-1);
-                next;
+                ($parsed, $char, $state, $index, $lval) = &$parse_loop($char, $state, $index, $lval);
+                return ($parsed, $char, $lex, $state, $index, $lval)
             }
 
             elsif (($index = $r_index[$state])
@@ -2313,7 +2335,15 @@ sub xxparse {
                 die 'unknown error';
             }
 
-        } # yyreduce
+            return ($parsed, $char, $lex, $state, $index, $lval);
+        }; # yyreduce
+
+        unless ($index = $defred[$state]) {
+            my ($parsed, $lex);
+            ($parsed, $char, $lex, $state, $index, $lval) = &$unless_loop($char, \@lex, $state, $index, $lval);
+            @lex = @$lex;
+            return ($parsed, $char) if $parsed;
+        }
 
         $yym = $length[$index];
         $val = $vs[$vsp + 1 - $yym];
@@ -2486,7 +2516,8 @@ sub xxparse {
 
             return $vs[$vsp] if $char == 0;
 
-            next;
+            return &$parse_loop($char, $state, $index, $lval);
+
         }
 
         if (($index = $g_index[$yym])
@@ -2502,7 +2533,17 @@ sub xxparse {
 
         $ss[++$ssp] = $state;
         $vs[++$vsp] = $val;
+        (undef, $char, $index, $lval) = &$parse_loop($char, $state, $index, $lval);
+    };
+
+    my ($tree) = &$parse_loop($char, $state, $index, $lval);
+
+    for my $key (sort {$a <=> $b} keys %index_stats) {
+        say {$fh} $key;
     }
+
+    return $tree;
+
 }
 
 sub my_parse {
@@ -2518,10 +2559,18 @@ sub parse {
 
     my $yyparse = xxparse($asn);
 
+    say "HERE THERE AND EVERYWHERE";
+    dd $yyparse;
+
+
     my $verified = verify($yyparse);
+
+    say "xxx";
+    dd $verified;
 
     # my $compile = compile($verified);
     my $compile = compile($yyparse);
+
 
     return $compile;
 }
@@ -2547,7 +2596,6 @@ sub compile_one {
 
         else {
             unless (exists $tree->{$type}) {
-                dd $tree;
                 die "Unknown type '$type'";
             }
 
@@ -2661,26 +2709,81 @@ sub my_verify {
     return verify(@_);
 }
 
+sub frick {
+    my $tree = shift or die "No tree";
+    my $keys = shift // [ keys %$tree ];
+
+    dd $tree;
+    dd $keys;
+
+    my $key = $keys->[0];
+    say "key => ", $key;
+    my $node = $tree->{ $key };
+
+    frack(
+        $key,
+        $node,
+    );
+
+}
+
+my $frack = 1;
+sub frack {
+    say "Frack => ", $frack++;
+    my $name = shift;
+    my $ops = shift;
+    my $new_ops = shift // [];
+    dd $ops;
+    if (ref $ops eq 'ARRAY') {
+        say "Array";
+        frack($name, $ops->[6]);
+    }
+
+}
+
 sub verify {
     blerg "sub verify";
     my $tree = shift or return;
+    #  dd $tree;
+    my $new_tree = {};
 
     # Well it parsed correctly, now we
     #  - check references exist
     #  - flatten COMPONENTS OF (checking for loops)
     #  - check for duplicate var names
+    # use constant cVAR => 2;
+    # use constant cCHILD => 6;
+    # use constant cTYPE => 1;
 
-    while(my($name,$ops) = each %$tree) {
-        my $stash = {};
-        my @scope = ();
-        my $path = "";
+    while ( my($name, $ops) = each %$tree) {
+        my $scope = [];
         my $idx = 0;
+        my $path = '';
+        my $stash = {};
 
-        while(1) {
+        my $while = 0;
+        while (1) {
 
-            if ($idx < @$ops) {
+            $while++;
+            say "########## While Loop: $while";
+            say "\t\$idx => $idx";
+            say "Scope";
+            dd $scope;
+            say "";
+            say "Ops";
+            dd \$ops;
+            say "";
+
+            my $ops_length = scalar @$ops;
+            if ($idx < $ops_length) {
                 my $op = $ops->[$idx++];
+                say "\$op";
+                dd $op;
+                say "";
                 my $var = $op->[cVAR];
+                say "\$var";
+                dd $var;
+                say "";
 
                 if (defined $var) {
                     $stash->{$var}++;
@@ -2690,8 +2793,11 @@ sub verify {
                 }
 
                 if (defined $op->[cCHILD]) {
-                    if (ref $op->[cCHILD]) {
-                        push @scope, [$stash, $path, $ops, $idx];
+
+                    if (ref $op->[cCHILD] eq 'ARRAY') {
+                        my $scipe = [$stash, $path, $ops, $idx];
+                        push @$scope, $scipe;
+                        # die "Down the scoep";
                         if (defined $var) {
                             $stash = {};
                             $path .= "." . $var;
@@ -2701,7 +2807,7 @@ sub verify {
                     }
 
                     elsif ($op->[cTYPE] eq 'COMPONENTS') {
-                        splice(@$ops,--$idx,1,expand_ops($tree, $op->[cCHILD]));
+                        splice(@$ops, --$idx, 1, expand_ops($tree, $op->[cCHILD]));
                     }
 
                     else {
@@ -2710,13 +2816,20 @@ sub verify {
                 }
             }
             else {
-                my $s = pop @scope or last;
-                ($stash,$path,$ops,$idx) = @$s;
+                if (@$scope) {
+                    say "### POPPING FRESH!";
+                    my $s = pop @$scope;
+                    ($stash, $path, $ops, $idx) = @$s;
+                }
+                else {
+                    last;
+                }
             }
         }
     }
 
     return $tree;
+    # say "HERE";
 }
 
 sub expand_ops {
@@ -2731,8 +2844,7 @@ sub expand_ops {
 
     die "Bad macro for COMPUNENTS OF '$want'\n"
         unless @$ops == 1
-            && ($ops->[0][cTYPE] eq 'SEQUENCE' || $ops->[0][cTYPE] eq 'SET')
-            && ref $ops->[0][cCHILD];
+            && ($ops->[0][cTYPE] eq 'SEQUENCE' || $ops->[0][cTYPE] eq 'SET');
     $ops = $ops->[0][cCHILD];
 
     for(my $idx = 0 ; $idx < @$ops ; ) {

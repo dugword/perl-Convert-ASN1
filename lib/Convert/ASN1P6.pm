@@ -398,9 +398,14 @@ module Convert::ASN1P6 {
         }
 
         method parse(@lex) {
-            say "### Tree ###";
+            # say "### Tree ###";
             my %xxparsed = xxparse(@lex);
-            say Dump(%xxparsed);
+            # say Dump(%xxparsed);
+
+            my $verified = verify(%xxparsed);
+            say "xxx";
+            say Dump($verified);
+            exit;
 
             my $compiled = compile(%xxparsed);
 
@@ -604,7 +609,7 @@ module Convert::ASN1P6 {
             }
 
             else {
-                die "Unknown type '$type'\n" unless %tree{$type}:exists;
+                die "Unknown type $type\n" unless %tree{$type}:exists;
 
                 my @ref = compile-one(
                     %tree,
@@ -762,7 +767,7 @@ module Convert::ASN1P6 {
 
             elsif ($index == 4) {
                 $val = @vs[ $vsp - 3 ];
-                $val.{ '$vs'[ $vsp - 2 ] } = [ @vs[ $vsp ] ];
+                $val{ @vs[ $vsp - 2 ] } = [ @vs[ $vsp ] ];
             }
 
             elsif ($index == 5) {
@@ -976,7 +981,7 @@ module Convert::ASN1P6 {
              ]
             ||
             $<identifier-type> = [
-                [ OCTET || BIT ] \s+ STRING
+                [ [ OCTET || BIT ] \s+ STRING ]
                 || OBJECT \s+ IDENTIFIER
                 || 'RELATIVE-OID'
             ]<|w>
@@ -1037,7 +1042,7 @@ module Convert::ASN1P6 {
             elsif $<identifier-type> {
                 my $identifier-type = $<identifier-type>.Str;
 
-                $identifier-type = S:g/\s+/_/ given $identifier-type;
+                $identifier-type = $identifier-type.subst(' ', '_', :g);
 
                 @lex_array.push({
                     type => constWORD,
@@ -1140,46 +1145,63 @@ module Convert::ASN1P6 {
     }
 
     sub verify(%tree){
+        my $scope = [];
+        my $idx = 0;
+        my $path = '';
+        my $stash = {};
 
         # Well it parsed correctly, now we
         #  - check references exist
         #  - flatten COMPONENTS OF (checking for loops)
         #  - check for duplicate var names
 
-        for %tree.kv -> $name, $ops {
-            my $stash = {};
-            my @scope = ();
-            my $path = "";
-            my $idx = 0;
-
+        for %tree.kv -> $name, $ops-two {
+            my $ops = $ops-two;
+            my $while = 0;
             while (1) {
+                $while++;
+                say "########## While Loop: $while";
+                say "\t\$idx => $idx";
+                say "Scope";
+                say Dump($scope);
+                say "";
+                say "Ops";
+                say Dump($ops);
 
-                if ($idx < @$ops) {
-                    my $op = $ops.[$idx++];
-                    my $var = $op.[cVAR];
+                if ($idx < $ops.elems) {
+                    my $op = $ops[$idx++];
+                    say "\$op";
+                    say Dump($op);
+                    say "";
+                    my $var = $op[cVAR];
+                    say "\$var";
+                    say Dump($var);
+                    say "";
 
                     if (defined $var) {
-                        $stash.{'$var'}++;
-                        if ($stash.{'$var'} > 1) {
+                        $stash{$var}++;
+                        if ($stash{$var} > 1) {
                             die "$name: $path.$var used multiple times";
                         }
                     }
 
-                    if (defined $op.[cCHILD]) {
-
+                    if ($op[cCHILD].defined) {
                         # if (ref $op[cCHILD]) {
-                        if (($op[cCHILD]).WHAT == [].WHAT) {
-                            push @scope, [$stash, $path, $ops, $idx];
-                            if (defined $var) {
+                        if (($op[cCHILD]).isa('Array')) {
+                            my $a = [$stash, $path, $ops, $idx];
+                            $scope.push($a);
+                            # die "down scope";
+                            if ($var.defined) {
                                 $stash = {};
                                 $path ~= "." ~ $var;
                             }
+
                             $idx = 0;
-                            $ops = $op.[cCHILD];
+                            $ops = @( $op[cCHILD] );
                         }
 
-                        elsif ($op.[cTYPE] eq 'COMPONENTS') {
-                            splice(@$ops, --$idx, 1, expand_ops(%tree, $op.[cCHILD]));
+                        elsif ($op[cTYPE] eq 'COMPONENTS') {
+                            splice($ops, --$idx, 1, expand_ops(%tree, $op[cCHILD]));
                         }
 
                         else {
@@ -1188,8 +1210,19 @@ module Convert::ASN1P6 {
                     }
                 }
                 else {
-                    my $s = pop @scope or last;
-                    ($stash, $path, $ops, $idx) = @$s;
+                    if ($scope.elems) {
+                        say "### POPPING FRESH";
+                        my $s = $scope.pop;
+
+                        $stash = $s[0];
+                        $path = $s[1];
+                        $ops = $s[2];
+                        $idx = $s[3];
+
+                    }
+                    else {
+                        last;
+                    }
                 }
             }
         }
@@ -1199,25 +1232,23 @@ module Convert::ASN1P6 {
 
     sub expand_ops(%tree, $want, %seen = {}) {
 
-        die "COMPONENTS OF loop $want\n" if %seen{'$want'}++;
-        die "Undefined macro $want\n" unless %tree{'$want'}:exists;
-        my $ops = %tree{'$want'};
+        die "COMPONENTS OF loop $want\n" if %seen{$want}++;
+        die "Undefined macro $want\n" unless %tree{$want}:exists;
+        my @ops = %tree{$want};
 
-        die "Bad macro for COMPUNENTS OF '$want'\n"
-            unless @$ops == 1
-                && ($ops.[0][cTYPE] eq 'SEQUENCE' || $ops.[0][cTYPE] eq 'SET')
-                # && ref $ops.[0][cCHILD];
-                && ( ($ops.[0][cCHILD]).WHAT == [].WHAT);
-        $ops = $ops.[0][cCHILD];
+        die "Bad macro for COMPUNENTS OF $want\n"
+            unless @ops.elems == 1
+                && (@ops[0][cTYPE] eq 'SEQUENCE' || @ops[0][cTYPE] eq 'SET');
+        @ops = @ops[0][cCHILD];
 
-        loop (my $idx = 0 ; $idx < @$ops ; ) {
-            my $op = $ops.[$idx++];
-            if ($op.[cTYPE] eq 'COMPONENTS') {
-                splice(@$ops,--$idx,1,expand_ops(%tree, $op.[cCHILD], %seen));
+        loop (my $idx = 0 ; $idx < @ops ; ) {
+            my @op = @ops[$idx++];
+            if (@op[cTYPE] eq 'COMPONENTS') {
+                splice(@ops,--$idx,1,expand_ops(%tree, @op[cCHILD], %seen));
             }
         }
 
-        return @$ops;
+        return @ops;
     }
 
 

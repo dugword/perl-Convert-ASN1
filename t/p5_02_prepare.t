@@ -11,7 +11,20 @@ use Convert::ASN1 ':all';
 
 my $asn5 = Convert::ASN1->new;
 my $string = ' null NULL ';
+
 $string= ' seq SEQUENCE OF SEQUENCE { str STRING, val SEQUENCE OF STRING } ';
+$string = ' s1  OCTET STRING ';
+$string = '
+    MySeq1 ::= SEQUENCE {
+        a1  INTEGER ,
+        s1  OCTET STRING
+        }
+    MySeq2 ::= SEQUENCE {
+        COMPONENTS OF MySeq1,
+        r REAL
+        }
+';
+
 say $string;
 #  $asn5->my_xxlex($string);
 $asn5->prepare($string);
