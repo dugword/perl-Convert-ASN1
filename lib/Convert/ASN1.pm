@@ -11,6 +11,8 @@ no warnings 'recursion';
 
 use Data::Dump;
 
+use Convert::ASN1::Parser;
+
 use Exporter;
 use Socket;
 use Math::BigInt;
@@ -2073,11 +2075,6 @@ sub _dec_bcd {
 
 
 
-# args: class,plicit
-sub need_explicit {
-    blerg "sub need_explicit";
-    ( defined($_[0]) && (defined($_[1]) ? $_[1] : $tagdefault ));
-}
 
 # Given an OP, wrap it in a SEQUENCE
 
@@ -2092,16 +2089,6 @@ sub explicit {
   \@seq;
 }
 
-sub my_yyparse {
-    my $self = shift;
-    return yyparse(@_);
-}
-
-sub my_xxlex {
-    my $self = shift;
-    my $asn = shift;
-    return xxlex($asn);
-}
 
 sub xxlex {
     # my $self = shift;
@@ -2249,319 +2236,8 @@ sub xxlex {
         lval => undef,
     };
 
-    return @lex_array;
+    return \@lex_array;
         # return (0, undef);
-}
-
-sub my_xxparse {
-    my $asn = shift;
-    return xxparse($asn);
-
-}
-
-sub xxparse {
-    my $asn = shift;
-
-    blerg "sub yyparse";
-
-    my @lex = xxlex($asn);
-
-    my $lval;
-
-    my $char = (-1);
-    my $index;
-    my $ssp = 0;
-    my $vsp = 0;
-
-    my $ss = [];
-    my $vs = [];
-    my $state = 0;
-    my $yym;
-    my $val;
-    $ss->[$ssp] = $state;
-
-    my $parse_loop;
-    open my $fh, '>:encoding(UTF-8)', 'index.data';
-    my %index_stats;
-    $parse_loop = sub {
-
-        my $char = shift;
-        my $state = shift;
-        my $index = shift;
-        my $lval = shift;
-        my $ssp = shift;
-        my $vsp = shift;
-
-        # $index_stats{$index}++;
-
-        my $unless_loop;
-        $unless_loop = sub {
-
-            my $char = shift;
-            my $lex = shift;
-            my $state = shift;
-            my $index = shift;
-            my $lval = shift;
-            my $parsed;
-            my $ssp = shift;
-            my $vsp = shift;
-            my $ss = shift;
-            my $vs = shift;
-
-            say "Char => $char";
-            if ($char < 0) {
-                my $item = shift @$lex;
-                $char = $item->{type};
-                $lval = $item->{lval};
-
-                if ($char < 0) {
-                    $char = 0;
-                }
-            }
-
-            if (($index = $s_index[$state])
-                && ($index += $char) >= 0
-                && $check[$index] == $char) {
-
-                $ss->[++$ssp] = $state = $table[$index];
-                $vs->[++$vsp] = $lval;
-                $char = (-1);
-
-                ($parsed, $char, $state, $index, $lval, $ssp, $vsp)
-                    = &$parse_loop($char, $state, $index, $lval, $ssp, $vsp, $ss, $vs);
-
-                return ($parsed, $char, $lex, $state, $index, $lval, $ssp, $vsp, $ss, $vs)
-            }
-
-            elsif (($index = $r_index[$state])
-                && ($index += $char) >= 0
-                && $check[$index] == $char) {
-
-                $index = $table[$index];
-            }
-
-            else {
-                die 'unknown error';
-            }
-
-            return ($parsed, $char, $lex, $state, $index, $lval, $ssp, $vsp, $ss, $vs);
-
-        }; # yyreduce
-
-        unless ($index = $defred[$state]) {
-            my ($parsed, $lex);
-            ($parsed, $char, $lex, $state, $index, $lval, $ssp, $vsp, $ss, $vs)
-                = &$unless_loop($char, \@lex, $state, $index, $lval, $ssp, $vsp, $ss, $vs);
-
-            @lex = @$lex;
-            return ($parsed) if $parsed;
-        }
-
-        $yym = $length[$index];
-        $val = $vs->[$vsp + 1 - $yym];
-
-        if ($index == 1) {
-            $val = { '' => $vs->[ $vsp ] };
-        }
-
-        elsif ($index == 3) {
-            $val = { $vs->[ $vsp - 2 ], [ $vs->[ $vsp ] ] };
-        }
-
-        elsif ($index == 4) {
-            $val = $vs->[ $vsp - 3 ];
-            $val->{ $vs->[ $vsp - 2 ] } = [ $vs->[ $vsp ] ];
-        }
-
-        elsif ($index == 5) {
-            $vs->[ $vsp - 1 ]->[cTAG] = $vs->[ $vsp - 3 ];
-            $val = need_explicit($vs->[ $vsp - 3 ], $vs->[ $vsp - 2 ])
-                ? explicit($vs->[ $vsp - 1 ])
-                : $vs->[ $vsp - 1 ];
-        }
-
-        elsif ($index == 11) {
-            @{$val = []}[ cTYPE, cCHILD ] = ('COMPONENTS', $vs->[ $vsp ]);
-        }
-
-        elsif ($index == 14) {
-            $vs->[ $vsp - 1 ]->[cTAG] = $vs->[ $vsp - 3 ];
-            @{$val = []}[ cTYPE, cCHILD, cLOOP, cOPT ]
-                = ($vs->[ $vsp - 5 ], [$vs->[ $vsp - 1 ]], 1, $vs->[ $vsp - 0 ]);
-
-            $val = explicit($val) if need_explicit($vs->[ $vsp - 3], $vs->[ $vsp - 2 ]);
-        }
-
-        elsif ($index == 18) {
-            @{$val = []}[cTYPE,cCHILD] = ('SEQUENCE', $vs->[ $vsp - 1 ]);
-        }
-
-        elsif ($index == 19) {
-            @{$val = []}[cTYPE,cCHILD] = ('SET', $vs->[ $vsp - 1 ]);
-        }
-
-        elsif ($index == 20) {
-            @{$val = []}[cTYPE,cCHILD] = ('CHOICE', $vs->[ $vsp - 1 ]);
-        }
-
-        elsif ($index == 21) {
-            @{$val = []}[cTYPE] = ('ENUM');
-        }
-
-        elsif ($index == 22 || $index == 23 || $index == 24 || $index == 26)  {
-            @{$val = []}[cTYPE] = $vs->[ $vsp ];
-        }
-
-        elsif ($index == 25) {
-            @{$val = []}[cTYPE,cCHILD,cDEFINE] = ('ANY', undef, $vs->[ $vsp ]);
-        }
-
-        elsif ($index == 27) { $val = undef; }
-
-        elsif ($index == 28 || $index == 30) {
-            $val = $vs->[ $vsp ];
-        }
-
-        elsif ($index == 31) {
-            $val = $vs->[ $vsp - 1 ];
-        }
-
-        elsif ($index == 32) {
-            $val = [ $vs->[ $vsp ] ];
-        }
-
-        elsif ($index == 33) {
-            push @{$val=$vs->[ $vsp - 2 ]}, $vs->[ $vsp ];
-        }
-
-        elsif ($index == 34) {
-            push @{$val=$vs->[$vsp - 2 ]}, $vs->[ $vsp ];
-        }
-
-        elsif ($index == 35) {
-            @{$val=$vs->[ $vsp ]}[ cVAR, cTAG ] = ($vs->[ $vsp - 3 ], $vs->[ $vsp - 2 ]);
-            $val = explicit($val) if need_explicit($vs->[ $vsp - 2], $vs->[ $vsp - 1 ]);
-        }
-
-        elsif ($index == 36) { @{$val=[]}[cTYPE] = 'EXTENSION_MARKER'; }
-
-        elsif ($index == 37) { $val = []; }
-
-        elsif ($index == 38) {
-            my $extension = 0;
-            $val = [];
-            for my $i (@{$vs->[$vsp-0]}) {
-                $extension = 1 if $i->[cTYPE] eq 'EXTENSION_MARKER';
-                $i->[cEXT] = $i->[cOPT];
-                $i->[cEXT] = 1 if $extension;
-                push @{$val}, $i unless $i->[cTYPE] eq 'EXTENSION_MARKER';
-            }
-            my $e = []; $e->[cTYPE] = 'EXTENSION_MARKER';
-            push @{$val}, $e if $extension;
-        }
-
-        elsif ($index == 39) {
-            my $extension = 0;
-            $val = [];
-            for my $i (@{$vs->[$vsp-1]}) {
-                $extension = 1 if $i->[cTYPE] eq 'EXTENSION_MARKER';
-                $i->[cEXT] = $i->[cOPT];
-                $i->[cEXT] = 1 if $extension;
-                push @{$val}, $i unless $i->[cTYPE] eq 'EXTENSION_MARKER';
-            }
-            my $e = []; $e->[cTYPE] = 'EXTENSION_MARKER';
-            push @{$val}, $e if $extension;
-        }
-
-        elsif ($index == 40) {
-            $val = [ $vs->[ $vsp ] ];
-        }
-
-        elsif ($index == 41) {
-            push @{ $val = $vs->[ $vsp - 2 ]}, $vs->[ $vsp ];
-        }
-
-        elsif ($index == 42) {
-            push @{ $val = $vs->[ $vsp - 2 ]}, $vs->[ $vsp ];
-        }
-
-        elsif ($index == 43) {
-            @{ $val = $vs->[ $vsp -1 ]}[cOPT] = ($vs->[ $vsp ]);
-        }
-
-        elsif ($index == 47) {
-            @{$val=$vs->[ $vsp ]}[cVAR,cTAG] = ($vs->[ $vsp - 3 ],$vs->[ $vsp - 2 ]);
-            $val->[cOPT] = $vs->[ $vsp - 3] if $val->[cOPT];
-            $val = explicit($val) if need_explicit($vs->[ $vsp - 2], $vs->[ $vsp - 1 ]);
-        }
-
-        elsif ($index == 49) {
-            @{$val=$vs->[ $vsp ]}[cTAG] = ($vs->[ $vsp - 2 ]);
-            $val = explicit($val) if need_explicit($vs->[ $vsp - 2 ], $vs->[ $vsp - 1 ]);
-        }
-
-        elsif ($index == 50) { @{$val=[]}[cTYPE] = 'EXTENSION_MARKER'; }
-
-        elsif ($index == 51 || $index == 53 || $index == 55) { $val = undef; }
-
-        elsif ($index == 52 || $index == 56 ) { $val = 1; }
-
-        elsif ($index == 57) { $val = 0; }
-
-        $ssp -= $yym;
-        $state = $ss->[$ssp];
-        $vsp -= $yym;
-        $yym = $left_hand_side[$index];
-
-        if ($state == 0 && $yym == 0) {
-            $state = constYYFINAL();
-            $ss->[++$ssp] = constYYFINAL();
-            $vs->[++$vsp] = $val;
-
-            if ($char < 0) {
-                my $item = shift @lex;
-                $char = $item->{type};
-                $lval = $item->{lval};
-
-                if ($char < 0) { $char = 0; }
-            }
-
-            return $vs->[$vsp] if $char == 0;
-
-            return &$parse_loop($char, $state, $index, $lval, $ssp, $vsp, $ss, $vs);
-
-        }
-
-        if (($index = $g_index[$yym])
-            && ($index += $state) >= 0
-            && $index <= $#check
-            && $check[$index] == $state) {
-
-            $state = $table[$index];
-        }
-        else {
-            $state = $dgoto[$yym];
-        }
-
-        $ss->[++$ssp] = $state;
-        $vs->[++$vsp] = $val;
-
-        &$parse_loop($char, $state, $index, $lval, $ssp, $vsp, $ss, $vs);
-    };
-
-    my ($tree) = &$parse_loop($char, $state, $index, $lval, $ssp, $vsp, $ss, $vs);
-
-    for my $key (sort {$a <=> $b} keys %index_stats) {
-        say {$fh} $key;
-    }
-
-    return $tree;
-
-}
-
-sub my_parse {
-    my $self = shift;
-    parse(@_);
 }
 
 sub parse {
@@ -2569,19 +2245,14 @@ sub parse {
     my $asn = $_[0];
 
     $tagdefault = $_[1] eq 'EXPLICIT' ? 1 : 0;
+    say "HERE IS THAT DEFAULT => ", $tagdefault;
 
-    my $yyparse = xxparse($asn);
+    my $lex = xxlex($asn);
 
-    say "HERE THERE AND EVERYWHERE";
-    dd $yyparse;
-
+    my $yyparse = Convert::ASN1::Parser::parse($asn, $lex, $tagdefault);
 
     my $verified = verify($yyparse);
 
-    say "xxx";
-    dd $verified;
-
-    # my $compile = compile($verified);
     my $compile = compile($yyparse);
 
 
@@ -2690,10 +2361,6 @@ sub compile_one {
   return $ops;
 }
 
-sub my_compile {
-    my $self = shift;
-    return compile(@_);
-}
 
 sub compile {
     blerg "sub compile";
@@ -2717,42 +2384,6 @@ sub compile {
     return $tree;
 }
 
-sub my_verify {
-    my $self = shift;
-    return verify(@_);
-}
-
-sub frick {
-    my $tree = shift or die "No tree";
-    my $keys = shift // [ keys %$tree ];
-
-    dd $tree;
-    dd $keys;
-
-    my $key = $keys->[0];
-    say "key => ", $key;
-    my $node = $tree->{ $key };
-
-    frack(
-        $key,
-        $node,
-    );
-
-}
-
-my $frack = 1;
-sub frack {
-    say "Frack => ", $frack++;
-    my $name = shift;
-    my $ops = shift;
-    my $new_ops = shift // [];
-    dd $ops;
-    if (ref $ops eq 'ARRAY') {
-        say "Array";
-        frack($name, $ops->[6]);
-    }
-
-}
 
 sub verify {
     blerg "sub verify";
@@ -2778,25 +2409,25 @@ sub verify {
         while (1) {
 
             $while++;
-            say "########## While Loop: $while";
-            say "\t\$idx => $idx";
-            say "Scope";
-            dd $scope;
-            say "";
-            say "Ops";
-            dd \$ops;
-            say "";
+            # say "########## While Loop: $while";
+            # say "\t\$idx => $idx";
+            # say "Scope";
+            # dd $scope;
+            # say "";
+            # say "Ops";
+            # dd \$ops;
+            # say "";
 
             my $ops_length = scalar @$ops;
             if ($idx < $ops_length) {
                 my $op = $ops->[$idx++];
-                say "\$op";
-                dd $op;
-                say "";
+                # say "\$op";
+                # dd $op;
+                # say "";
                 my $var = $op->[cVAR];
-                say "\$var";
-                dd $var;
-                say "";
+                # say "\$var";
+                # dd $var;
+                # say "";
 
                 if (defined $var) {
                     $stash->{$var}++;
@@ -2830,7 +2461,7 @@ sub verify {
             }
             else {
                 if (@$scope) {
-                    say "### POPPING FRESH!";
+                    # say "### POPPING FRESH!";
                     my $s = pop @$scope;
                     ($stash, $path, $ops, $idx) = @$s;
                 }
@@ -2869,7 +2500,5 @@ sub expand_ops {
 
     return @$ops;
 }
-
-
 
 1;
