@@ -2273,12 +2273,12 @@ sub xxparse {
     my $ssp = 0;
     my $vsp = 0;
 
-    my @ss;
-    my @vs;
+    my $ss = [];
+    my $vs = [];
     my $state = 0;
     my $yym;
     my $val;
-    $ss[$ssp] = $state;
+    $ss->[$ssp] = $state;
 
     my $parse_loop;
     open my $fh, '>:encoding(UTF-8)', 'index.data';
@@ -2289,6 +2289,8 @@ sub xxparse {
         my $state = shift;
         my $index = shift;
         my $lval = shift;
+        my $ssp = shift;
+        my $vsp = shift;
 
         # $index_stats{$index}++;
 
@@ -2301,6 +2303,10 @@ sub xxparse {
             my $index = shift;
             my $lval = shift;
             my $parsed;
+            my $ssp = shift;
+            my $vsp = shift;
+            my $ss = shift;
+            my $vs = shift;
 
             say "Char => $char";
             if ($char < 0) {
@@ -2317,11 +2323,14 @@ sub xxparse {
                 && ($index += $char) >= 0
                 && $check[$index] == $char) {
 
-                $ss[++$ssp] = $state = $table[$index];
-                $vs[++$vsp] = $lval;
+                $ss->[++$ssp] = $state = $table[$index];
+                $vs->[++$vsp] = $lval;
                 $char = (-1);
-                ($parsed, $char, $state, $index, $lval) = &$parse_loop($char, $state, $index, $lval);
-                return ($parsed, $char, $lex, $state, $index, $lval)
+
+                ($parsed, $char, $state, $index, $lval, $ssp, $vsp)
+                    = &$parse_loop($char, $state, $index, $lval, $ssp, $vsp, $ss, $vs);
+
+                return ($parsed, $char, $lex, $state, $index, $lval, $ssp, $vsp, $ss, $vs)
             }
 
             elsif (($index = $r_index[$state])
@@ -2335,61 +2344,64 @@ sub xxparse {
                 die 'unknown error';
             }
 
-            return ($parsed, $char, $lex, $state, $index, $lval);
+            return ($parsed, $char, $lex, $state, $index, $lval, $ssp, $vsp, $ss, $vs);
+
         }; # yyreduce
 
         unless ($index = $defred[$state]) {
             my ($parsed, $lex);
-            ($parsed, $char, $lex, $state, $index, $lval) = &$unless_loop($char, \@lex, $state, $index, $lval);
+            ($parsed, $char, $lex, $state, $index, $lval, $ssp, $vsp, $ss, $vs)
+                = &$unless_loop($char, \@lex, $state, $index, $lval, $ssp, $vsp, $ss, $vs);
+
             @lex = @$lex;
-            return ($parsed, $char) if $parsed;
+            return ($parsed) if $parsed;
         }
 
         $yym = $length[$index];
-        $val = $vs[$vsp + 1 - $yym];
+        $val = $vs->[$vsp + 1 - $yym];
 
         if ($index == 1) {
-            $val = { '' => $vs[ $vsp ] };
+            $val = { '' => $vs->[ $vsp ] };
         }
 
         elsif ($index == 3) {
-            $val = { $vs[ $vsp - 2 ], [ $vs[ $vsp ] ] };
+            $val = { $vs->[ $vsp - 2 ], [ $vs->[ $vsp ] ] };
         }
 
         elsif ($index == 4) {
-            $val = $vs[ $vsp - 3 ];
-            $val->{ $vs[ $vsp - 2 ] } = [ $vs[ $vsp ] ];
+            $val = $vs->[ $vsp - 3 ];
+            $val->{ $vs->[ $vsp - 2 ] } = [ $vs->[ $vsp ] ];
         }
 
         elsif ($index == 5) {
-            $vs[ $vsp - 1 ]->[cTAG] = $vs[ $vsp - 3 ];
-            $val = need_explicit($vs[ $vsp - 3 ], $vs[ $vsp - 2 ])
-                ? explicit($vs[ $vsp - 1 ])
-                : $vs[ $vsp - 1 ];
+            $vs->[ $vsp - 1 ]->[cTAG] = $vs->[ $vsp - 3 ];
+            $val = need_explicit($vs->[ $vsp - 3 ], $vs->[ $vsp - 2 ])
+                ? explicit($vs->[ $vsp - 1 ])
+                : $vs->[ $vsp - 1 ];
         }
 
         elsif ($index == 11) {
-            @{$val = []}[ cTYPE, cCHILD ] = ('COMPONENTS', $vs[ $vsp ]);
+            @{$val = []}[ cTYPE, cCHILD ] = ('COMPONENTS', $vs->[ $vsp ]);
         }
 
         elsif ($index == 14) {
-            $vs[ $vsp - 1 ]->[cTAG] = $vs[ $vsp - 3 ];
+            $vs->[ $vsp - 1 ]->[cTAG] = $vs->[ $vsp - 3 ];
             @{$val = []}[ cTYPE, cCHILD, cLOOP, cOPT ]
-                = ($vs[ $vsp - 5 ], [$vs[ $vsp - 1 ]], 1, $vs[ $vsp - 0 ]);
+                = ($vs->[ $vsp - 5 ], [$vs->[ $vsp - 1 ]], 1, $vs->[ $vsp - 0 ]);
 
-            $val = explicit($val) if need_explicit($vs[ $vsp - 3], $vs[ $vsp - 2 ]);
+            $val = explicit($val) if need_explicit($vs->[ $vsp - 3], $vs->[ $vsp - 2 ]);
         }
 
         elsif ($index == 18) {
-            @{$val = []}[cTYPE,cCHILD] = ('SEQUENCE', $vs[ $vsp - 1 ]);
+            @{$val = []}[cTYPE,cCHILD] = ('SEQUENCE', $vs->[ $vsp - 1 ]);
         }
 
         elsif ($index == 19) {
-            @{$val = []}[cTYPE,cCHILD] = ('SET', $vs[ $vsp - 1 ]);
+            @{$val = []}[cTYPE,cCHILD] = ('SET', $vs->[ $vsp - 1 ]);
         }
 
         elsif ($index == 20) {
-            @{$val = []}[cTYPE,cCHILD] = ('CHOICE', $vs[ $vsp - 1 ]);
+            @{$val = []}[cTYPE,cCHILD] = ('CHOICE', $vs->[ $vsp - 1 ]);
         }
 
         elsif ($index == 21) {
@@ -2397,38 +2409,38 @@ sub xxparse {
         }
 
         elsif ($index == 22 || $index == 23 || $index == 24 || $index == 26)  {
-            @{$val = []}[cTYPE] = $vs[ $vsp ];
+            @{$val = []}[cTYPE] = $vs->[ $vsp ];
         }
 
         elsif ($index == 25) {
-            @{$val = []}[cTYPE,cCHILD,cDEFINE] = ('ANY', undef, $vs[ $vsp ]);
+            @{$val = []}[cTYPE,cCHILD,cDEFINE] = ('ANY', undef, $vs->[ $vsp ]);
         }
 
         elsif ($index == 27) { $val = undef; }
 
         elsif ($index == 28 || $index == 30) {
-            $val = $vs[ $vsp ];
+            $val = $vs->[ $vsp ];
         }
 
         elsif ($index == 31) {
-            $val = $vs[ $vsp - 1 ];
+            $val = $vs->[ $vsp - 1 ];
         }
 
         elsif ($index == 32) {
-            $val = [ $vs[ $vsp ] ];
+            $val = [ $vs->[ $vsp ] ];
         }
 
         elsif ($index == 33) {
-            push @{$val=$vs[ $vsp - 2 ]}, $vs[ $vsp ];
+            push @{$val=$vs->[ $vsp - 2 ]}, $vs->[ $vsp ];
         }
 
         elsif ($index == 34) {
-            push @{$val=$vs[$vsp - 2 ]}, $vs[ $vsp ];
+            push @{$val=$vs->[$vsp - 2 ]}, $vs->[ $vsp ];
         }
 
         elsif ($index == 35) {
-            @{$val=$vs[ $vsp ]}[ cVAR, cTAG ] = ($vs[ $vsp - 3 ], $vs[ $vsp - 2 ]);
-            $val = explicit($val) if need_explicit($vs[ $vsp - 2], $vs[ $vsp - 1 ]);
+            @{$val=$vs->[ $vsp ]}[ cVAR, cTAG ] = ($vs->[ $vsp - 3 ], $vs->[ $vsp - 2 ]);
+            $val = explicit($val) if need_explicit($vs->[ $vsp - 2], $vs->[ $vsp - 1 ]);
         }
 
         elsif ($index == 36) { @{$val=[]}[cTYPE] = 'EXTENSION_MARKER'; }
@@ -2438,7 +2450,7 @@ sub xxparse {
         elsif ($index == 38) {
             my $extension = 0;
             $val = [];
-            for my $i (@{$vs[$vsp-0]}) {
+            for my $i (@{$vs->[$vsp-0]}) {
                 $extension = 1 if $i->[cTYPE] eq 'EXTENSION_MARKER';
                 $i->[cEXT] = $i->[cOPT];
                 $i->[cEXT] = 1 if $extension;
@@ -2451,7 +2463,7 @@ sub xxparse {
         elsif ($index == 39) {
             my $extension = 0;
             $val = [];
-            for my $i (@{$vs[$vsp-1]}) {
+            for my $i (@{$vs->[$vsp-1]}) {
                 $extension = 1 if $i->[cTYPE] eq 'EXTENSION_MARKER';
                 $i->[cEXT] = $i->[cOPT];
                 $i->[cEXT] = 1 if $extension;
@@ -2462,30 +2474,30 @@ sub xxparse {
         }
 
         elsif ($index == 40) {
-            $val = [ $vs[ $vsp ] ];
+            $val = [ $vs->[ $vsp ] ];
         }
 
         elsif ($index == 41) {
-            push @{ $val = $vs[ $vsp - 2 ]}, $vs[ $vsp ];
+            push @{ $val = $vs->[ $vsp - 2 ]}, $vs->[ $vsp ];
         }
 
         elsif ($index == 42) {
-            push @{ $val = $vs[ $vsp - 2 ]}, $vs[ $vsp ];
+            push @{ $val = $vs->[ $vsp - 2 ]}, $vs->[ $vsp ];
         }
 
         elsif ($index == 43) {
-            @{ $val = $vs[ $vsp -1 ]}[cOPT] = ($vs[ $vsp ]);
+            @{ $val = $vs->[ $vsp -1 ]}[cOPT] = ($vs->[ $vsp ]);
         }
 
         elsif ($index == 47) {
-            @{$val=$vs[ $vsp ]}[cVAR,cTAG] = ($vs[ $vsp - 3 ],$vs[ $vsp - 2 ]);
-            $val->[cOPT] = $vs[ $vsp - 3] if $val->[cOPT];
-            $val = explicit($val) if need_explicit($vs[ $vsp - 2], $vs[ $vsp - 1 ]);
+            @{$val=$vs->[ $vsp ]}[cVAR,cTAG] = ($vs->[ $vsp - 3 ],$vs->[ $vsp - 2 ]);
+            $val->[cOPT] = $vs->[ $vsp - 3] if $val->[cOPT];
+            $val = explicit($val) if need_explicit($vs->[ $vsp - 2], $vs->[ $vsp - 1 ]);
         }
 
         elsif ($index == 49) {
-            @{$val=$vs[ $vsp ]}[cTAG] = ($vs[ $vsp - 2 ]);
-            $val = explicit($val) if need_explicit($vs[ $vsp - 2 ], $vs[ $vsp - 1 ]);
+            @{$val=$vs->[ $vsp ]}[cTAG] = ($vs->[ $vsp - 2 ]);
+            $val = explicit($val) if need_explicit($vs->[ $vsp - 2 ], $vs->[ $vsp - 1 ]);
         }
 
         elsif ($index == 50) { @{$val=[]}[cTYPE] = 'EXTENSION_MARKER'; }
@@ -2497,14 +2509,14 @@ sub xxparse {
         elsif ($index == 57) { $val = 0; }
 
         $ssp -= $yym;
-        $state = $ss[$ssp];
+        $state = $ss->[$ssp];
         $vsp -= $yym;
         $yym = $left_hand_side[$index];
 
         if ($state == 0 && $yym == 0) {
             $state = constYYFINAL();
-            $ss[++$ssp] = constYYFINAL();
-            $vs[++$vsp] = $val;
+            $ss->[++$ssp] = constYYFINAL();
+            $vs->[++$vsp] = $val;
 
             if ($char < 0) {
                 my $item = shift @lex;
@@ -2514,9 +2526,9 @@ sub xxparse {
                 if ($char < 0) { $char = 0; }
             }
 
-            return $vs[$vsp] if $char == 0;
+            return $vs->[$vsp] if $char == 0;
 
-            return &$parse_loop($char, $state, $index, $lval);
+            return &$parse_loop($char, $state, $index, $lval, $ssp, $vsp, $ss, $vs);
 
         }
 
@@ -2531,12 +2543,13 @@ sub xxparse {
             $state = $dgoto[$yym];
         }
 
-        $ss[++$ssp] = $state;
-        $vs[++$vsp] = $val;
-        (undef, $char, $index, $lval) = &$parse_loop($char, $state, $index, $lval);
+        $ss->[++$ssp] = $state;
+        $vs->[++$vsp] = $val;
+
+        &$parse_loop($char, $state, $index, $lval, $ssp, $vsp, $ss, $vs);
     };
 
-    my ($tree) = &$parse_loop($char, $state, $index, $lval);
+    my ($tree) = &$parse_loop($char, $state, $index, $lval, $ssp, $vsp, $ss, $vs);
 
     for my $key (sort {$a <=> $b} keys %index_stats) {
         say {$fh} $key;
