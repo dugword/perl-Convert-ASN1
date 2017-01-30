@@ -1,4 +1,6 @@
 #!/usr/local/bin/perl
+use Data::Dump;
+use Test::More;
 use lib 'lib';
 
 #
@@ -6,6 +8,8 @@ use lib 'lib';
 #
 
 use Convert::ASN1 qw(:all);
+use Convert::ASN1::Compiler;
+use Convert::ASN1::Constants qw(:all);
 
 print "1..186\n";
 
@@ -15,17 +19,16 @@ ntest 1, 129,      asn_tag(ASN_CONTEXT, 1);
 ntest 2, 0x201f,   asn_tag(ASN_UNIVERSAL, 32);
 ntest 3, 0x01825f, asn_tag(ASN_APPLICATION, 257);
 
-stest 4, pack("C*", 129),            asn_encode_tag(129);
-stest 5, pack("C*", 0x1f,0x20),      asn_encode_tag(0x201f);
-stest 6, pack("C*", 0x5f,0x82,0x01), asn_encode_tag(0x01825f);
+stest 4, pack("C*", 129),            Convert::ASN1::Compiler::asn_encode_tag(129);
+stest 5, pack("C*", 0x1f,0x20),      Convert::ASN1::Compiler::asn_encode_tag(0x201f);
+stest 6, pack("C*", 0x5f,0x82,0x01), Convert::ASN1::Compiler::asn_encode_tag(0x01825f);
 
-ntest 7, 129,       asn_decode_tag(asn_encode_tag(asn_tag(ASN_CONTEXT, 1)));
-ntest 8, 0x201f,    asn_decode_tag(asn_encode_tag(asn_tag(ASN_UNIVERSAL, 32)));
-ntest 9, 0x01825f,  asn_decode_tag(asn_encode_tag(asn_tag(ASN_APPLICATION, 257)));
-
-ntest 10, 1, (asn_decode_tag(asn_encode_tag(asn_tag(ASN_CONTEXT, 1))))[0];
-ntest 11, 2, (asn_decode_tag(asn_encode_tag(asn_tag(ASN_UNIVERSAL, 32))))[0];
-ntest 12, 3, (asn_decode_tag(asn_encode_tag(asn_tag(ASN_APPLICATION, 257))))[0];
+ntest 7, 129,       asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_CONTEXT, 1)));
+ntest 8, 0x201f,    asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_UNIVERSAL, 32)));
+ntest 9, 0x01825f,  asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_APPLICATION, 257)));
+ntest 10, 1, (asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_CONTEXT, 1))))[0];
+ntest 11, 2, (asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_UNIVERSAL, 32))))[0];
+ntest 12, 3, (asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_APPLICATION, 257))))[0];
 
 stest 13, pack("C*", 45),             asn_encode_length(45);
 stest 14, pack("C*", 0x81,0x8b),      asn_encode_length(139);
@@ -48,6 +51,35 @@ btest 22, $asn = Convert::ASN1->new;
 print "# NULL\n";
 
 $buf = pack("C*", 0x05, 0x00);
+
+my $lexed = $asn->my_lex(' null NULL ');
+my $null_lexed = [
+    { lval => "null", type => 1 },
+    { lval => "NULL", type => 1 },
+    { lval => undef,  type => 0 },
+];
+
+# is_deeply $lexed, $null_lexed, 'lexed correct';
+
+my $parsed = $asn->my_parse($lexed, 'IMPLICIT');
+my $null_parsed = {
+    "" => [
+        [undef, "NULL", "null", undef, undef, undef]
+    ]
+};
+
+# is_deeply $parsed, $null_parsed, 'parsed correct';
+
+my $verified = $asn->my_verify($parsed);
+my $null_verified = {};
+
+# dd $verified;
+
+# is_deeply $verified, $null_verified, 'verified correct';
+
+
+# exit;
+
 btest 23, $asn->prepare(' null NULL ') or warn $asn->error;
 stest 24, $buf, $asn->encode(null => 1) or warn $asn->error;
 btest 25, $ret = $asn->decode($buf) or warn $asn->error;

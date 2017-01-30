@@ -155,7 +155,6 @@ my @table = (                                             30,
 
 # Standard export stuff
 sub parse {
-    my $asn = shift;
     my $lex = shift;
     my $my_tagdefault = shift;
 

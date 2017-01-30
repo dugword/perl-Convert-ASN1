@@ -6,10 +6,7 @@ use warnings;
 no warnings 'recursion';
 
 use Data::Dump;
-my $tagdefault = 1; # 0:IMPLICIT , 1:EXPLICIT default
-sub need_explicit {
-    ( defined($_[0]) && (defined($_[1]) ? $_[1] : $tagdefault ));
-}
+
 use constant {
     ASN_BOOLEAN => 0x01,
     ASN_INTEGER => 0x02,
@@ -39,6 +36,7 @@ use constant {
     ASN_EXTENSION_ID => 0x1F,
     ASN_BIT => 0x80,
 };
+
 my %tag_class = (
   APPLICATION => ASN_APPLICATION,
   UNIVERSAL   => ASN_UNIVERSAL,
@@ -68,6 +66,7 @@ use constant {
     opBCD => 17,
     opEXTENSIONS => 18,
 };
+
 use constant {
     constWORD => 1,
     constCLASS => 2,
@@ -96,7 +95,6 @@ use constant {
     constYYTABLESIZE => 181,
 };
 
-
 my %reserved = (
   'OPTIONAL'   => constOPTIONAL,
   'CHOICE'     => constCHOICE,
@@ -117,10 +115,6 @@ my %reserved = (
   'BY'         => constBY,
 );
 
-
-
-
-
 my %type = (
     '10' => 'SEQUENCE',
     '01' => 'BOOLEAN',
@@ -138,81 +132,27 @@ my %type = (
 );
 
 sub asn_tag {
-  my($class,$value) = @_;
+    my($class,$value) = @_;
 
-  die sprintf "Bad tag class 0x%x",$class
-    if $class & ~0xe0;
+    die sprintf "Bad tag class 0x%x",$class
+        if $class & ~0xe0;
 
-  unless ($value & ~0x1f or $value == 0x1f) {
-    return (($class & 0xe0) | $value);
-  }
+    unless ($value & ~0x1f or $value == 0x1f) {
+        return (($class & 0xe0) | $value);
+    }
 
-  die sprintf "Tag value 0x%08x too big\n",$value
-    if $value & 0xffe00000;
+    die sprintf "Tag value 0x%08x too big\n",$value
+        if $value & 0xffe00000;
 
-  $class = ($class | 0x1f) & 0xff;
+    $class = ($class | 0x1f) & 0xff;
 
-  my @t = ($value & 0x7f);
-  unshift @t, (0x80 | ($value & 0x7f)) while $value >>= 7;
-  unpack("V",pack("C4",$class,@t,0,0));
+    my @t = ($value & 0x7f);
+    unshift @t, (0x80 | ($value & 0x7f)) while $value >>= 7;
+    unpack("V",pack("C4",$class,@t,0,0));
 }
-
-sub asn_encode_tag {
-    $_[0] >> 8
-        ? $_[0] & 0x8000
-            ? $_[0] & 0x800000
-                ? pack("V",$_[0])
-                : substr(pack("V",$_[0]),0,3)
-            : pack("v", $_[0])
-        : pack("C",$_[0]);
-}
-
-
-my %base_type = (
-  BOOLEAN        => [ asn_encode_tag(ASN_BOOLEAN),        opBOOLEAN ],
-  INTEGER        => [ asn_encode_tag(ASN_INTEGER),        opINTEGER ],
-  BIT_STRING        => [ asn_encode_tag(ASN_BIT_STR),        opBITSTR  ],
-  OCTET_STRING        => [ asn_encode_tag(ASN_OCTET_STR),        opSTRING  ],
-  STRING        => [ asn_encode_tag(ASN_OCTET_STR),        opSTRING  ],
-  NULL             => [ asn_encode_tag(ASN_NULL),        opNULL    ],
-  OBJECT_IDENTIFIER => [ asn_encode_tag(ASN_OBJECT_ID),        opOBJID   ],
-  REAL            => [ asn_encode_tag(ASN_REAL),        opREAL    ],
-  ENUMERATED        => [ asn_encode_tag(ASN_ENUMERATED),    opINTEGER ],
-  ENUM            => [ asn_encode_tag(ASN_ENUMERATED),    opINTEGER ],
-  'RELATIVE-OID'    => [ asn_encode_tag(ASN_RELATIVE_OID),    opROID      ],
-
-  SEQUENCE        => [ asn_encode_tag(ASN_SEQUENCE | ASN_CONSTRUCTOR), opSEQUENCE ],
-  EXPLICIT        => [ asn_encode_tag(ASN_SEQUENCE | ASN_CONSTRUCTOR), opEXPLICIT ],
-  SET               => [ asn_encode_tag(ASN_SET      | ASN_CONSTRUCTOR), opSET ],
-
-  ObjectDescriptor  => [ asn_encode_tag(ASN_UNIVERSAL |  7), opSTRING ],
-  UTF8String        => [ asn_encode_tag(ASN_UNIVERSAL | 12), opUTF8 ],
-  NumericString     => [ asn_encode_tag(ASN_UNIVERSAL | 18), opSTRING ],
-  PrintableString   => [ asn_encode_tag(ASN_UNIVERSAL | 19), opSTRING ],
-  TeletexString     => [ asn_encode_tag(ASN_UNIVERSAL | 20), opSTRING ],
-  T61String         => [ asn_encode_tag(ASN_UNIVERSAL | 20), opSTRING ],
-  VideotexString    => [ asn_encode_tag(ASN_UNIVERSAL | 21), opSTRING ],
-  IA5String         => [ asn_encode_tag(ASN_UNIVERSAL | 22), opSTRING ],
-  UTCTime           => [ asn_encode_tag(ASN_UNIVERSAL | 23), opUTIME ],
-  GeneralizedTime   => [ asn_encode_tag(ASN_UNIVERSAL | 24), opGTIME ],
-  GraphicString     => [ asn_encode_tag(ASN_UNIVERSAL | 25), opSTRING ],
-  VisibleString     => [ asn_encode_tag(ASN_UNIVERSAL | 26), opSTRING ],
-  ISO646String      => [ asn_encode_tag(ASN_UNIVERSAL | 26), opSTRING ],
-  GeneralString     => [ asn_encode_tag(ASN_UNIVERSAL | 27), opSTRING ],
-  CharacterString   => [ asn_encode_tag(ASN_UNIVERSAL | 28), opSTRING ],
-  UniversalString   => [ asn_encode_tag(ASN_UNIVERSAL | 28), opSTRING ],
-  BMPString         => [ asn_encode_tag(ASN_UNIVERSAL | 30), opSTRING ],
-  BCDString         => [ asn_encode_tag(ASN_OCTET_STR), opBCD ],
-
-  CHOICE => [ '', opCHOICE ],
-  ANY    => [ '', opANY ],
-
-  EXTENSION_MARKER => [ '', opEXTENSIONS ],
-);
 
 
 my $reserved = join("|", reverse sort grep { /\w/ } keys %reserved);
-
 
 use constant {
     cTAG => 0,
