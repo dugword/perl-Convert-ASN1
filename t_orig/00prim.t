@@ -77,6 +77,9 @@ my $null_verified = {};
 
 # is_deeply $verified, $null_verified, 'verified correct';
 
+my $compiled = $asn->my_compile($verified);
+dd $compiled;
+exit;
 
 # exit;
 

@@ -1,134 +1,122 @@
-
-sub verify_inner_loop {
+sub compile_loop {
+    my $op = shift;
     my $tree = shift;
     my $name = shift;
-    my $ops = shift;
 
-    my $scope = shift;
-    my $idx = shift;
-    my $path = shift;
-    my $stash = shift;
+    return unless ref($op) eq 'ARRAY';
+    bless $op;
+    my $type = $op->[cTYPE];
 
-    my $ops_length = scalar @$ops;
-    if ($idx < $ops_length) {
-        my $op = $ops->[$idx++];
-        my $var = $op->[cVAR];
 
-        if (defined $var) {
-            $stash->{$var}++;
-            if ($stash->{$var} > 1) {
-                die "$name: $path.$var used multiple times";
-            }
-        }
+    if (exists $base_type{$type}) {
+        $op->[cTYPE] = $base_type{$type}->[1];
 
-        if (defined $op->[cCHILD]) {
+        $op->[cTAG] = defined($op->[cTAG])
+            ? asn_encode_tag($op->[cTAG])
+            : $base_type{$type}->[0];
 
-            if (ref $op->[cCHILD] eq 'ARRAY') {
-                my $scipe = [$stash, $path, $ops, $idx];
-                push @$scope, $scipe;
-                if (defined $var) {
-                    $stash = {};
-                    $path .= "." . $var;
-                }
-                $idx = 0;
-                $ops = $op->[cCHILD];
-            }
-
-            elsif ($op->[cTYPE] eq 'COMPONENTS') {
-                splice(@$ops, --$idx, 1, expand_ops($tree, $op->[cCHILD]));
-            }
-
-            else {
-                die "Internal error\n";
-            }
-        }
     }
+
     else {
-        if (@$scope) {
-            my $s = pop @$scope;
-            ($stash, $path, $ops, $idx) = @$s;
+        unless (exists $tree->{$type}) {
+            die "Unknown type '$type'";
         }
+
+        my $ref = compile_one(
+            $tree,
+            $tree->{$type},
+            defined($op->[cVAR]) ? $name . "." . $op->[cVAR] : $name
+            );
+
+        if (defined($op->[cTAG]) && $ref->[0][cTYPE] == opCHOICE) {
+            @{$op}[cTYPE,cCHILD] = (opSEQUENCE,$ref);
+        }
+
         else {
-            return;
+            @{$op}[cTYPE,cCHILD,cLOOP] = @{$ref->[0]}[cTYPE,cCHILD,cLOOP];
+        }
+
+        $op->[cTAG] = defined($op->[cTAG]) ? asn_encode_tag($op->[cTAG]): $ref->[0][cTAG];
+    }
+
+    $op->[cTAG] |= pack("C",ASN_CONSTRUCTOR)
+        if length $op->[cTAG]
+            && ($op->[cTYPE] == opSET
+            || $op->[cTYPE] == opEXPLICIT
+            || $op->[cTYPE] == opSEQUENCE);
+
+
+    if ($op->[cCHILD]) {
+        # If we have children we are one of
+        #  opSET opSEQUENCE opCHOICE opEXPLICIT
+
+        compile_one(
+            $tree,
+            $op->[cCHILD],
+            defined($op->[cVAR])
+                ? $name . "." . $op->[cVAR]
+                : $name);
+
+        if ( @{$op->[cCHILD]} > 1) {
+            #if ($op->[cTYPE] != opSEQUENCE) {
+            # Here we need to flatten CHOICEs and check that SET and CHOICE
+            # do not contain duplicate tags
+            #}
+
+            if ($op->[cTYPE] == opSET) {
+                # In case we do CER encoding we order the SET elements by thier tags
+                my @tags = map { 
+                    length($_->[cTAG])
+                    ? $_->[cTAG]
+                    : $_->[cTYPE] == opCHOICE
+                    ? (sort map { $_->[cTAG] } $_->[cCHILD])[0]
+                    : ''
+                } @{$op->[cCHILD]};
+
+                @{$op->[cCHILD]} = @{$op->[cCHILD]}[sort
+                    { $tags[$a] cmp $tags[$b] }
+                    0..$#tags
+                ];
+            }
+        }
+
+        else {
+            # A SET of one element can be treated the same as a SEQUENCE
+            $op->[cTYPE] = opSEQUENCE if $op->[cTYPE] == opSET;
         }
     }
-
-    verify_inner_loop(
-        $tree,
-        $name,
-        $ops,
-        $scope,
-        $idx,
-        $path,
-        $stash,
-    );
 };
 
-sub verify_loop {
-    my $tree = shift;
-    my $name = shift;
-    my $ops = shift;
+sub compile_one {
+    my ($tree, $ops, $name) = @_;
 
-    my $scope = [];
-    my $idx = 0;
-    my $path = '';
-    my $stash = {};
+    my $compile_loop;
 
-
-    verify_inner_loop(
-        $tree,
-        $name,
-        $ops,
-        $scope,
-        $idx,
-        $path,
-        $stash,
-    );
-};
-
-sub verify {
-    my $tree = shift or return;
-    #  dd $tree;
-    my $new_tree = {};
-
-    # Well it parsed correctly, now we
-    #  - check references exist
-    #  - flatten COMPONENTS OF (checking for loops)
-    #  - check for duplicate var names
-    # use constant cVAR => 2;
-    # use constant cCHILD => 6;
-    # use constant cTYPE => 1;
-
-
-    while ( my($name, $ops) = each %$tree) {
-        verify_loop($tree, $name, $ops);
+    foreach my $op (@$ops) {
+        compile_loop($op, $tree, $name);
     }
 
-
-    return $tree;
-    # say "HERE";
+  return $ops;
 }
 
-sub expand_ops {
+
+sub compile {
     my $tree = shift;
-    my $want = shift;
-    my $seen = shift || { };
 
-    die "COMPONENTS OF loop $want\n" if $seen->{$want}++;
-    die "Undefined macro $want\n" unless exists $tree->{$want};
-    my $ops = $tree->{$want};
+    # The tree should be valid enough to be able to
+    #  - resolve references
+    #  - encode tags
+    #  - verify CHOICEs do not contain duplicate tags
 
-    die "Bad macro for COMPUNENTS OF '$want'\n"
-        unless @$ops == 1
-            && ($ops->[0][cTYPE] eq 'SEQUENCE' || $ops->[0][cTYPE] eq 'SET');
-    $ops = $ops->[0][cCHILD];
+    # once references have been resolved, and also due to
+    # flattening of COMPONENTS, it is possible for an op
+    # to appear in multiple places. So once an op is
+    # compiled we bless it. This ensure we dont try to
+    # compile it again.
 
-    for(my $idx = 0 ; $idx < @$ops ; ) {
-        my $op = $ops->[$idx++];
-        if ($op->[cTYPE] eq 'COMPONENTS') {
-            splice(@$ops,--$idx,1,expand_ops($tree, $op->[cCHILD], $seen));
-        }
+    while(my($k,$v) = each %$tree) {
+        compile_one($tree,$v,$k);
     }
 
-    return @$ops;
+    return $tree;
 }

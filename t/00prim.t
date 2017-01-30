@@ -111,3 +111,6 @@ my %null-verified =
 is-deeply %verified,
     %null-verified,
     'ASN " null NULL " verified correctly';
+
+my $compiled = compile(%verified);
+dd $compiled;

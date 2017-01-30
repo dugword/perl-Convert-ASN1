@@ -550,11 +550,13 @@ sub my_parse {
 sub my_verify {
     my $self = shift;
     my $yyparse = shift;
-    Convert::ASN1::Verifier::verify($yyparse);
+    return Convert::ASN1::Verifier::verify($yyparse);
 }
 
 sub my_compile {
     my $self = shift;
+    my $verified = shift;
+    return Convert::ASN1::Compiler::compile($verified);
 }
 
 sub parse {
@@ -568,7 +570,7 @@ sub parse {
 
     my $verified = Convert::ASN1::Verifier::verify($yyparse);
 
-    my $compile = Convert::ASN1::Compiler::compile($yyparse);
+    my $compile = Convert::ASN1::Compiler::compile($verified);
 
     return $compile;
 }

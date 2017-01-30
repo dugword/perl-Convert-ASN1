@@ -4,6 +4,8 @@ use experimental :pack;
 
 my $tagdefault = 'IMPLICIT';
 
+class Fuck is Array {}
+
 
 module Convert::ASN1P6 {
 
@@ -711,7 +713,7 @@ module Convert::ASN1P6 {
 
         elsif ($index == 4) {
             $val = $vs.[ $vsp - 3 ];
-            $val.{ '$vs'.[ $vsp - 2 ] } = [ $vs.[ $vsp ] ];
+            $val.{ $vs.[ $vsp - 2 ] } = [ $vs.[ $vsp ] ];
         }
 
         elsif ($index == 5) {
@@ -922,8 +924,8 @@ module Convert::ASN1P6 {
             my $var = $op.[cVAR];
 
             if (defined $var) {
-                $stash.{'$var'}++;
-                if ($stash.{'$var'} > 1) {
+                $stash.{$var}++;
+                if ($stash.{$var} > 1) {
                     die "$name: $path.$var used multiple times";
                 }
             }
@@ -1022,11 +1024,11 @@ module Convert::ASN1P6 {
         $seen,
     ) {
 
-        die "COMPONENTS OF loop $want\n" if $seen.{'$want'}++;
-        die "Undefined macro $want\n" unless %tree{'$want'}:exists;
-        my $ops = %tree{'$want'};
+        die "COMPONENTS OF loop $want\n" if $seen.{$want}++;
+        die "Undefined macro $want\n" unless %tree{$want}:exists;
+        my $ops = %tree{$want};
 
-        die "Bad macro for COMPUNENTS OF '$want'\n"
+        die "Bad macro for COMPUNENTS OF $want\n"
             unless @$ops == 1
                 && ($ops.[0][cTYPE] eq 'SEQUENCE' || $ops.[0][cTYPE] eq 'SET');
         $ops = $ops.[0][cCHILD];
@@ -1039,5 +1041,127 @@ module Convert::ASN1P6 {
         }
 
         return @$ops;
+    }
+
+    sub compile-loop(@op is copy, $tree is copy, $name is copy) {
+        my $op;
+        return unless $op.isa('Array') && (! $op.isa('Fuck'));
+        $op = Fuck.new(@op);
+        dd $op;
+        my $op.pop;
+        dd $op;
+
+        my $type = $op[cTYPE];
+        dd $type;
+
+
+        if ($type && (%base-type{$type}:exists)) {
+            $op.[cTYPE] = %base-type{$type}.[1];
+            $op.[cTAG] = defined($op.[cTAG])
+                ?? asn-encode-tag($op.[cTAG])
+                !! %base-type{$type}.[0];
+
+        }
+
+        else {
+            unless ($type && ($tree.{$type}:exists)) {
+                die "Unknown type { $type || '?' }";
+            }
+
+            my $ref = compile-one(
+                $tree,
+                $tree.{$type},
+                defined($op.[cVAR]) ?? $name ~ "." ~ $op.[cVAR] !! $name
+                );
+
+            if (defined($op.[cTAG]) && $ref.[0][cTYPE] == opCHOICE) {
+                @($op)[cTYPE,cCHILD] = (opSEQUENCE,$ref);
+            }
+
+            else {
+                @($op)[cTYPE,cCHILD,cLOOP] = @($ref.[0])[cTYPE,cCHILD,cLOOP];
+            }
+
+            $op.[cTAG] = defined($op.[cTAG]) ?? asn-encode-tag($op.[cTAG])!! $ref.[0][cTAG];
+        }
+
+        $op.[cTAG] +|= pack("C",ASN_CONSTRUCTOR)
+            if $op.[cTAG].elems
+                && ($op.[cTYPE] == opSET
+                || $op.[cTYPE] == opEXPLICIT
+                || $op.[cTYPE] == opSEQUENCE);
+
+
+        if ($op.[cCHILD]) {
+            # If we have children we are one of
+            #  opSET opSEQUENCE opCHOICE opEXPLICIT
+
+            compile-one(
+                $tree,
+                $op.[cCHILD],
+                defined($op.[cVAR])
+                    ?? $name ~ "." ~ $op.[cVAR]
+                    !! $name);
+
+            if ( @($op.[cCHILD]) > 1) {
+                #if ($op->[cTYPE] != opSEQUENCE) {
+                # Here we need to flatten CHOICEs and check that SET and CHOICE
+                # do not contain duplicate tags
+                #}
+
+                if ($op.[cTYPE] == opSET) {
+                    # In case we do CER encoding we order the SET elements by thier tags
+                    my @tags = map { 
+                        ($_.[cTAG]).elems
+                        ?? $_.[cTAG]
+                        !! $_.[cTYPE] == opCHOICE
+                        ?? (sort map { $_.[cTAG] }, $_.[cCHILD])[0]
+                        !! ''
+                    }, @($op.[cCHILD]);
+
+                    @($op.[cCHILD]) = @($op.[cCHILD])[sort
+                        { @tags[$^a] leg @tags[$^b] },
+                        0..@tags.end
+                    ];
+                }
+            }
+
+            else {
+                # A SET of one element can be treated the same as a SEQUENCE
+                $op.[cTYPE] = opSEQUENCE if $op.[cTYPE] == opSET;
+            }
+        }
+    };
+
+    sub compile-one($tree is copy, $ops is copy, $name is copy) {
+
+        my $compile-loop;
+
+        for (@$ops) -> $op {
+            compile-loop($op, $tree, $name);
+        }
+
+    return $ops;
+    }
+
+
+    sub compile($tree) is export(:debug) {
+
+        # The tree should be valid enough to be able to
+        #  - resolve references
+        #  - encode tags
+        #  - verify CHOICEs do not contain duplicate tags
+
+        # once references have been resolved, and also due to
+        # flattening of COMPONENTS, it is possible for an op
+        # to appear in multiple places. So once an op is
+        # compiled we bless it. This ensure we dont try to
+        # compile it again.
+
+        for $tree.kv -> $k, $v {
+            compile-one($tree, $v, $k);
+        }
+
+        return $tree;
     }
 }
