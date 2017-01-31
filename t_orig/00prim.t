@@ -79,6 +79,8 @@ my $null_verified = {};
 
 my $compiled = $asn->my_compile($verified);
 dd $compiled;
+
+print ref $compiled->{""}[0], "\n";
 exit;
 
 # exit;

@@ -1043,16 +1043,27 @@ module Convert::ASN1P6 {
         return @$ops;
     }
 
-    sub compile-loop(@op is copy, $tree is copy, $name is copy) {
-        my $op;
-        return unless $op.isa('Array') && (! $op.isa('Fuck'));
-        $op = Fuck.new(@op);
-        dd $op;
-        my $op.pop;
-        dd $op;
+    sub compile-loop($op is copy, $tree is copy, $name is copy) {
+        say "Compile-loop op => ", $op;
+        say "here";
+
+        # if $op.isa('Array') && (! $op.isa('Fuck')) {
+        say $op.perl;
+        if $op.isa('Array') {
+            say "here I be yo";
+        }
+        else {
+            say "blerg return";
+            return;
+        }
+
+        say "there";
+        $op = Fuck.new(|$op);
+        say "Fuck op => ", $op.perl;
+        say "Fuck \$op.isa(Fuck) => ", $op.isa(Fuck);
 
         my $type = $op[cTYPE];
-        dd $type;
+        say "Type => ", $type;
 
 
         if ($type && (%base-type{$type}:exists)) {
@@ -1131,21 +1142,26 @@ module Convert::ASN1P6 {
                 $op.[cTYPE] = opSEQUENCE if $op.[cTYPE] == opSET;
             }
         }
+        say "DONE op => ", $op;
+        return $op;
     };
 
-    sub compile-one($tree is copy, $ops is copy, $name is copy) {
+    sub compile-one(%tree, @ops, $name) {
 
-        my $compile-loop;
-
-        for (@$ops) -> $op {
-            compile-loop($op, $tree, $name);
+        my @zops;
+        for (@ops) -> $op is rw {
+            say "Op => ", $op;
+            my $zop = compile-loop($op, %tree, $name);
+            @zops.push($zop);
         }
+        dd @zops;
 
-    return $ops;
+        return @zops;
     }
 
 
-    sub compile($tree) is export(:debug) {
+    sub compile(%tree) is export(:debug) {
+        say "Compiling...";
 
         # The tree should be valid enough to be able to
         #  - resolve references
@@ -1158,10 +1174,18 @@ module Convert::ASN1P6 {
         # compiled we bless it. This ensure we dont try to
         # compile it again.
 
-        for $tree.kv -> $k, $v {
-            compile-one($tree, $v, $k);
+        for %tree.kv -> $k, @v {
+            say "Key => ", $k;
+            say "Value => ", @v;
+            my @zv = compile-one(%tree, @v, $k);
+            dd @zv;
+            dd $k;
+            say @zv[0];
+            %tree{$k} = @zv;
+
         }
 
-        return $tree;
+        dd %tree;
+        return %tree;
     }
 }

@@ -135,9 +135,13 @@ sub compile_loop {
     my $tree = shift;
     my $name = shift;
 
+    say "compile_loop op => ";
+    dd $op;
+
     return unless ref($op) eq 'ARRAY';
     bless $op;
     my $type = $op->[cTYPE];
+    say "Type => ", $type;
 
 
     if (exists $base_type{$type}) {
@@ -225,6 +229,8 @@ sub compile_one {
     my $compile_loop;
 
     foreach my $op (@$ops) {
+        say "Op => ";
+        dd $op;
         compile_loop($op, $tree, $name);
     }
 
@@ -247,6 +253,9 @@ sub compile {
     # compile it again.
 
     while(my($k,$v) = each %$tree) {
+        say "Key => ", $k;
+        say "Value => ";
+        dd $v;
         compile_one($tree,$v,$k);
     }
 

@@ -4,10 +4,6 @@ use Test;
 use Data::Dump;
 use experimental :pack;
 
-sub dd {
-    say Dump @_;
-}
-
 use lib 'lib';
 use Convert::ASN1P6 (:constant, :debug);
 
@@ -112,5 +108,14 @@ is-deeply %verified,
     %null-verified,
     'ASN " null NULL " verified correctly';
 
-my $compiled = compile(%verified);
-dd $compiled;
+my %compiled = compile(%verified);
+# class Fuck is Array {};
+my Fuck $foo = Fuck.new(Buf.new(5), 5, "null", Mu, Any, Any);
+my %null-compiled = "" => $[$foo,];
+
+say %compiled.perl;
+say %null-compiled.perl;
+
+is-deeply %compiled.perl,
+    %null-compiled.perl;
+
