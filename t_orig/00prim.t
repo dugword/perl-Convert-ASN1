@@ -77,17 +77,20 @@ my $null_verified = {};
 
 # is_deeply $verified, $null_verified, 'verified correct';
 
-my $compiled = $asn->my_compile($verified);
-dd $compiled;
+# my $compiled = $asn->my_compile($verified);
+# dd $compiled;
 
-print ref $compiled->{""}[0], "\n";
-exit;
+# print ref $compiled->{""}[0], "\n";
 
 # exit;
 
 btest 23, $asn->prepare(' null NULL ') or warn $asn->error;
 stest 24, $buf, $asn->encode(null => 1) or warn $asn->error;
+my $result = $asn->encode( null => 1 );
 btest 25, $ret = $asn->decode($buf) or warn $asn->error;
+print "RET\n";
+dd $ret;
+# die;
 btest 26, $ret->{'null'};
 
 ##

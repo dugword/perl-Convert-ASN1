@@ -10,7 +10,7 @@ use Convert::ASN1::Constants qw(:all);
 
 use Data::Dump;
 
-Readonly::Array my @_dec_real_base => (2,8,16);
+Readonly::Array my @_dec_real_base => (2, 8, 16);
 
 Readonly::Array my @decode => (
   sub { die "internal error\n" },
@@ -45,17 +45,29 @@ sub decode {
     my $script = $self->{script};
     my $stash = \$result;
 
-    while ($script) {
-      my $child = $script->[0] or last;
+    # while ($script) {
+    my $while_decode;
 
-      if (@$script > 1 or defined $child->[cVAR]) {
-        $result = $stash = \%stash;
-        last;
-      }
+    $while_decode = sub {
+        my $script = shift;
+        my $child = $script->[0] or return;
 
-      last if $child->[cTYPE] == opCHOICE or $child->[cLOOP];
-      $script = $child->[cCHILD];
-    }
+        if (@$script > 1 or defined $child->[cVAR]) {
+            $result = $stash = \%stash;
+            say "result =>";
+            dd $result;
+
+            return;
+            # last;
+        }
+
+        return if $child->[cTYPE] == opCHOICE or $child->[cLOOP];
+        $script = $child->[cCHILD];
+
+        return &$while_decode($script);
+    };
+
+    &$while_decode($script);
 
     _decode(
         $self->{options},
@@ -67,6 +79,11 @@ sub decode {
         {},
         $pdu,
     );
+
+    say "final result";
+    dd $result;
+    say "final stash";
+    dd $stash;
 
     return $result
 }
@@ -92,7 +109,7 @@ sub _decode {
 
         if ($tag eq $op->[cTAG]) {
 
-            &{$decode[$op->[cTYPE]]}(
+            my ($int_flag, $x_result) = &{$decode[$op->[cTYPE]]}(
             $optn,
             $op,
             $stash,
@@ -102,6 +119,10 @@ sub _decode {
             ($seqof ? $seqof->[$idx++] : defined($var) ? $stash->{$var} : ref($stash) eq 'SCALAR' ? $$stash : 1),
             $buf,$npos,$len, $larr
             );
+
+            if ($int_flag && $int_flag eq 'int') {
+                $seqof ? $seqof->[$idx - 1] : defined($var) ? $stash->{$var} : ref($stash) eq 'SCALAR' ? $$stash : undef = $x_result;
+            }
 
             $pos = $npos+$len+$indef;
 
@@ -187,13 +208,17 @@ sub _decode {
                     : ref($stash) eq 'SCALAR'
                         ? ($$stash={}) : $stash;
 
-            &{$decode[$cop->[cTYPE]]}(
+            my ($int_flag, $x_result) = &{$decode[$cop->[cTYPE]]}(
             $optn,
             $cop,
             $nstash,
             ($cop->[cVAR] ? $nstash->{$cop->[cVAR]} : undef),
             $buf,$npos,$len,$larr,
             );
+            if ($int_flag && $int_flag eq 'int') {
+                ($cop->[cVAR] ? $nstash->{$cop->[cVAR]} : undef) = $x_result;
+
+            }
 
             $pos = $npos+$len+$indef;
 
@@ -293,18 +318,21 @@ sub _dec_boolean {
 
 
 sub _dec_integer {
+    my ($optn, $op, $stash, $var, $buf, $pos, $len) = @_;
 # 0      1    2       3     4     5     6
 # $optn, $op, $stash, $var, $buf, $pos, $len
 
-  my $buf = substr($_[4],$_[5],$_[6]);
+  $buf = substr($_[4],$_[5],$_[6]);
   my $tmp = unpack("C",$buf) & 0x80 ? pack("C",255) : pack("C",0);
-  if ($_[6] > 4) {
-      $_[3] = os2ip($buf, $_[0]->{decode_bigint} || 'Math::BigInt');
+  if ($len > 4) {
+      $var = os2ip($buf, $optn->{decode_bigint} || 'Math::BigInt');
   } else {
       # N unpacks an unsigned value
-      $_[3] = unpack("l",pack("l",unpack("N", $tmp x (4-$_[6]) . $buf)));
+      $var = unpack("l",pack("l",unpack("N", $tmp x (4 - $len) . $buf)));
   }
-  1;
+
+  return ('int', $var);
+  # 1;
 }
 
 
@@ -378,7 +406,7 @@ sub _dec_real {
     else {
       $expLen++;
     }
-    _dec_integer(undef, undef, undef, $exp, $_[4],$estart,$expLen);
+    (undef, $exp) = _dec_integer(undef, undef, undef, $exp, $_[4],$estart,$expLen);
 
     my $mant = 0.0;
     for (reverse unpack("C*",substr($_[4],$estart+$expLen,$_[6]-1-$expLen))) {
@@ -467,7 +495,7 @@ SET_OP:
       if (length($op->[cTAG])) {
     if ($tag eq $op->[cTAG]) {
       my $var = $op->[cVAR];
-      &{$decode[$op->[cTYPE]]}(
+      my ($int_flag, $x_result) = &{$decode[$op->[cTYPE]]}(
         $optn,
         $op,
         $stash,
@@ -477,6 +505,11 @@ SET_OP:
         (defined($var) ? $stash->{$var} : 1),
         $_[4],$npos,$len,$larr,
       );
+
+        if ($int_flag && $int_flag eq 'int') {
+            defined($var) ? $stash->{$var} : undef = $x_result;
+        }
+
       $done = $idx;
       last SET_OP;
     }
@@ -510,13 +543,17 @@ SET_OP:
       if ($tag eq $cop->[cTAG]) {
         my $nstash = defined($var) ? ($stash->{$var}={}) : $stash;
 
-        &{$decode[$cop->[cTYPE]]}(
+        my ($int_flag, $x_result) = &{$decode[$cop->[cTYPE]]}(
           $optn,
           $cop,
           $nstash,
           $nstash->{$cop->[cVAR]},
           $_[4],$npos,$len,$larr,
         );
+        if ($int_flag && $int_flag eq 'int') {
+          $nstash->{$cop->[cVAR]} = $x_result;
+
+        }
         $done = $idx;
         last SET_OP;
       }

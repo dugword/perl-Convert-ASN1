@@ -24,7 +24,10 @@ sub i2osp {
         $result .= pack("C",$r);
     }
     $result ^= pack("C",255) x length($result) if $neg;
-    return scalar reverse $result;
+    my $foo = reverse $result;
+    say "Foo";
+    dd $foo;
+    return $foo;
 }
 
 # Encode a length. If < 0x80 then encode as a byte. Otherwise encode
@@ -155,7 +158,15 @@ sub _enc_integer {
             || 'Math::BigInt');
 
         my $len = length $os;
+        # say "here";
+        # dd $os;
+        # say unpack("H*", $os);
+        # say vec($os, 0, 8);
+        # say unpack("H*", vec($os, 0, 8));
+        # say "blerg";
+        # say unpack("H*", vec(pack("H*", '3'), 0, 8));
         my $msb = (vec($os, 0, 8) & 0x80) ? 0 : 255;
+        # die;
 
         $len++, $os = pack("C",$msb) . $os if $msb xor $var > 0;
         $buf .= asn_encode_length($len);

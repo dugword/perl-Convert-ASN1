@@ -110,7 +110,7 @@ is-deeply %verified,
 
 my %compiled = compile(%verified);
 # class Fuck is Array {};
-my Fuck $foo = Fuck.new(Buf.new(5), 5, "null", Mu, Any, Any);
+my Compiled $foo = Compiled.new(Buf.new(5), 5, "null", Mu, Any, Any);
 my %null-compiled = "" => $[$foo,];
 
 say %compiled.perl;
@@ -119,3 +119,7 @@ say %null-compiled.perl;
 is-deeply %compiled.perl,
     %null-compiled.perl;
 
+$asn.prepare(' null NULL ');
+my $encoded = $asn.encode( (null => 1) );
+
+is $encoded, Buf.new(0x5, 0x0), 'null encoded';
