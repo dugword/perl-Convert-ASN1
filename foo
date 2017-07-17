@@ -1,8 +1,0 @@
-use lib './';
-use Fancy::Utilities;
-# use Foo;
-
-# Fancy::Utilities::lolgreet('Jnthn');
-say Fancy::Utilities::lolgreet('foo');
-# bar();
-# Foo::bar();

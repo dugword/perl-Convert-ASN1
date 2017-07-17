@@ -6,7 +6,7 @@ use lib 'lib';
 #
 
 use Convert::ASN1;
-BEGIN { require 't/funcs.pl' }
+BEGIN { require './t/funcs.pl' }
 
 print "1..21\n";
 

@@ -4,7 +4,7 @@ use lib 'lib';
 use Test::More;
 use File::Compare qw(compare_text);
 
-BEGIN { require "t/common.pl" }
+BEGIN { require "./t/common.pl" }
 
 
 plan tests => 9;

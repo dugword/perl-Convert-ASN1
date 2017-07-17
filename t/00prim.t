@@ -5,7 +5,10 @@ use Data::Dump;
 use experimental :pack;
 
 use lib 'lib';
+
 use Convert::ASN1P6 (:constant, :debug);
+
+plan 20;
 
 # asn-tag tests
 is-deeply asn-tag(ASN_CONTEXT, 1),
@@ -91,7 +94,7 @@ is-deeply $lexed,
     'ASN " null NULL " lexed correctly';
 
 my %parsed = parse($lexed, 'IMPLICIT');
-my %null-parsed = 
+my %null-parsed =
     "" => [
         [Any, "NULL", "null", Any, Any, Any],
     ]
@@ -109,7 +112,7 @@ is-deeply %verified,
     'ASN " null NULL " verified correctly';
 
 my %compiled = compile(%verified);
-# class Fuck is Array {};
+
 my Compiled $foo = Compiled.new(Buf.new(5), 5, "null", Mu, Any, Any);
 my %null-compiled = "" => $[$foo,];
 
@@ -120,6 +123,8 @@ is-deeply %compiled.perl,
     %null-compiled.perl;
 
 $asn.prepare(' null NULL ');
-my $encoded = $asn.encode( (null => 1) );
 
+my $encoded = $asn.encode( (null => 1) );
 is $encoded, Buf.new(0x5, 0x0), 'null encoded';
+
+my $decoded = $asn.decode(Buf.new(0x5, 0x0));

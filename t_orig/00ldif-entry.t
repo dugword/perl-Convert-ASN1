@@ -2,7 +2,7 @@
 use lib 'lib';
 
 BEGIN {
-  require "t/common.pl";
+  require "./t/common.pl";
 }
 
 use Test::More tests => 16;

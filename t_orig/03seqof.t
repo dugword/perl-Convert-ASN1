@@ -5,7 +5,7 @@ use lib 'lib';
 # Test that the primitive operators are working
 #
 
-BEGIN { require 't/funcs.pl' }
+BEGIN { require './t/funcs.pl' }
 
 use Convert::ASN1;
 

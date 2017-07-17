@@ -69,6 +69,8 @@ sub decode {
 
     &$while_decode($script);
 
+    say 'HERE IT BE GUY !';
+    dd $stash;
     _decode(
         $self->{options},
         $self->{script},

@@ -32,7 +32,8 @@ my @expected-script = [[ Buf.new(0x05), 5, 'null', Any, Any, Any],];
 my %stash = null => 1;
 
 say $asn-string;
-$asn.parse($asn.lex($asn-string));
+my $lexxed = lex($asn-string);
+my $parsed = parse($lexxed, 'IMPLICIT');
 
 # my %yyparse-result = yyparse($asn-string);
 # is %yyparse-result.perl, %expected-yyparse-result.perl, 'yyparse';
