@@ -6,7 +6,6 @@ my $tagdefault = 'IMPLICIT';
 
 class Compiled is Array {}
 
-
 module Convert::ASN1P6 {
 
 # Some numbering system constants
@@ -719,10 +718,10 @@ module Convert::ASN1P6 {
         dd $val;
 
         say $val.WHAT;
-        if $val.WHAT eq Block {
-            say "It's a block";
-            exit;
-        }
+        # if $val.WHAT eq Block {
+        #     say "It's a block";
+        #     exit;
+        # }
 
         if ($index == 1) {
             $val = { '' => $vs.[ $vsp ] };
@@ -1089,7 +1088,6 @@ module Convert::ASN1P6 {
         say "Compile-loop op => ", $op;
         say "here";
 
-        # if $op.isa('Array') && (! $op.isa('Fuck')) {
         say $op.perl;
         if $op.isa('Array') {
             say "here I be yo";
@@ -1099,10 +1097,29 @@ module Convert::ASN1P6 {
             return;
         }
 
+        say "### START LOOKING HERE ###";
+        say |$op;
+        say |$op;
+        say $op.values;
+        say $op.flat;
         say "there";
-        $op = Compiled.new(|$op);
+        say $op;
+        say $op;
+        say "there there";
+        say |$op;
+        say "pre-compiled op => ", $op.perl;
+        say $op.WHAT;
+        say |$op;
+        $op = Compiled.new($op.values);
         say "Compiled op => ", $op.perl;
         say "Compiled \$op.isa(Compiled) => ", $op.isa(Compiled);
+
+        for $op.values -> $value {
+            if $value.perl eq 'Mu' {
+                say "Found Mu";
+                exit;
+            }
+        };
 
         my $type = $op[cTYPE];
         say "Type => ", $type;

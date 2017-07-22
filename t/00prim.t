@@ -100,6 +100,8 @@ my %null-parsed =
     ]
 ;
 
+is-deeply %parsed, %null-parsed, 'parsed correctly';
+
 my %verified = verify(%parsed);
 my %null-verified =
     "" => [
@@ -112,19 +114,44 @@ is-deeply %verified,
     'ASN " null NULL " verified correctly';
 
 my %compiled = compile(%verified);
-
-my Compiled $foo = Compiled.new(Buf.new(5), 5, "null", Mu, Any, Any);
-my %null-compiled = "" => $[$foo,];
-
-say %compiled.perl;
-say %null-compiled.perl;
+my %null-compiled = {"" => [Compiled.new(
+    Buf.new(5),
+    5,
+    "null",
+    Mu,
+    Any,
+    Any,
+),]};
 
 is-deeply %compiled.perl,
     %null-compiled.perl;
 
-$asn.prepare(' null NULL ');
+
+say "what what";
+
+my $foo = $asn.prepare(' null NULL ');
+say $foo.WHAT;
+say $asn.perl;
+
+my %prepared = '' => '';
+my %null-prepared = {"" => [Compiled.new(
+    Buf.new(5),
+    5,
+    "null",
+    Mu,
+    Any,
+    Any,
+),]};
+
+say %prepared.perl;
+is-deeply %prepared, %null-prepared;
+
 
 my $encoded = $asn.encode( (null => 1) );
-is $encoded, Buf.new(0x5, 0x0), 'null encoded';
+say $encoded.perl;
+say "Done";
+exit;
 
-my $decoded = $asn.decode(Buf.new(0x5, 0x0));
+# is $encoded, Buf.new(0x5, 0x0), 'null encoded';
+#
+# my $decoded = $asn.decode(Buf.new(0x5, 0x0));

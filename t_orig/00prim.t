@@ -1,6 +1,12 @@
 #!/usr/local/bin/perl
+
+use 5.026;
+use strict;
+use warnings;
+
 use Data::Dump;
 use Test::More;
+use POSIX qw(HUGE_VAL);
 use lib 'lib';
 
 #
@@ -11,38 +17,35 @@ use Convert::ASN1 qw(:all);
 use Convert::ASN1::Compiler;
 use Convert::ASN1::Constants qw(:all);
 
-print "1..186\n";
+is 129, asn_tag(ASN_CONTEXT, 1);
+is 0x201f, asn_tag(ASN_UNIVERSAL, 32);
+is 0x01825f, asn_tag(ASN_APPLICATION, 257);
 
-BEGIN { require './t/funcs.pl' }
+is pack("C*", 129),            Convert::ASN1::Compiler::asn_encode_tag(129);
+is pack("C*", 0x1f,0x20),      Convert::ASN1::Compiler::asn_encode_tag(0x201f);
+is pack("C*", 0x5f,0x82,0x01), Convert::ASN1::Compiler::asn_encode_tag(0x01825f);
 
-ntest 1, 129,      asn_tag(ASN_CONTEXT, 1);
-ntest 2, 0x201f,   asn_tag(ASN_UNIVERSAL, 32);
-ntest 3, 0x01825f, asn_tag(ASN_APPLICATION, 257);
+is 129, asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_CONTEXT, 1)));
+is 0x201f, asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_UNIVERSAL, 32)));
+is 0x01825f,  asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_APPLICATION, 257)));
+is 1, (asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_CONTEXT, 1))))[0];
+is 2, (asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_UNIVERSAL, 32))))[0];
+is 3, (asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_APPLICATION, 257))))[0];
 
-stest 4, pack("C*", 129),            Convert::ASN1::Compiler::asn_encode_tag(129);
-stest 5, pack("C*", 0x1f,0x20),      Convert::ASN1::Compiler::asn_encode_tag(0x201f);
-stest 6, pack("C*", 0x5f,0x82,0x01), Convert::ASN1::Compiler::asn_encode_tag(0x01825f);
+is pack("C*", 45),             asn_encode_length(45);
+is pack("C*", 0x81,0x8b),      asn_encode_length(139);
+is pack("C*", 0x82,0x12,0x34), asn_encode_length(0x1234);
 
-ntest 7, 129,       asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_CONTEXT, 1)));
-ntest 8, 0x201f,    asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_UNIVERSAL, 32)));
-ntest 9, 0x01825f,  asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_APPLICATION, 257)));
-ntest 10, 1, (asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_CONTEXT, 1))))[0];
-ntest 11, 2, (asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_UNIVERSAL, 32))))[0];
-ntest 12, 3, (asn_decode_tag(Convert::ASN1::Compiler::asn_encode_tag(asn_tag(ASN_APPLICATION, 257))))[0];
+is 45,     asn_decode_length(asn_encode_length(45));
+is 139,    asn_decode_length(asn_encode_length(139));
+is 0x1234, asn_decode_length(asn_encode_length(0x1234));
 
-stest 13, pack("C*", 45),             asn_encode_length(45);
-stest 14, pack("C*", 0x81,0x8b),      asn_encode_length(139);
-stest 15, pack("C*", 0x82,0x12,0x34), asn_encode_length(0x1234);
+is 1, (asn_decode_length(asn_encode_length(45)))[0];
+is 2, (asn_decode_length(asn_encode_length(139)))[0];
+is 3, (asn_decode_length(asn_encode_length(0x1234)))[0];
 
-ntest 16, 45,     asn_decode_length(asn_encode_length(45));
-ntest 17, 139,    asn_decode_length(asn_encode_length(139));
-ntest 18, 0x1234, asn_decode_length(asn_encode_length(0x1234));
-
-ntest 19, 1, (asn_decode_length(asn_encode_length(45)))[0];
-ntest 20, 2, (asn_decode_length(asn_encode_length(139)))[0];
-ntest 21, 3, (asn_decode_length(asn_encode_length(0x1234)))[0];
-
-btest 22, $asn = Convert::ASN1->new;
+my $asn = Convert::ASN1->new;
+ok $asn;
 
 ##
 ## NULL
@@ -50,7 +53,7 @@ btest 22, $asn = Convert::ASN1->new;
 
 print "# NULL\n";
 
-$buf = pack("C*", 0x05, 0x00);
+my $buf = pack("C*", 0x05, 0x00);
 
 my $lexed = $asn->my_lex(' null NULL ');
 my $null_lexed = [
@@ -59,7 +62,7 @@ my $null_lexed = [
     { lval => undef,  type => 0 },
 ];
 
-# is_deeply $lexed, $null_lexed, 'lexed correct';
+is_deeply $lexed, $null_lexed, 'lexed correct';
 
 my $parsed = $asn->my_parse($lexed, 'IMPLICIT');
 my $null_parsed = {
@@ -68,46 +71,62 @@ my $null_parsed = {
     ]
 };
 
-# is_deeply $parsed, $null_parsed, 'parsed correct';
+is_deeply $parsed, $null_parsed, 'parsed correct';
 
 my $verified = $asn->my_verify($parsed);
-my $null_verified = {};
+my $null_verified = {
+    "" => [
+        [undef, "NULL", "null", undef, undef, undef]
+    ]
+};
 
-# dd $verified;
+is_deeply $verified, $null_verified, 'verified correct';
 
-# is_deeply $verified, $null_verified, 'verified correct';
+my $compiled = $asn->my_compile($verified);
+my $null_compiled = {
+    "" => [
+        bless(["\5", 5 ,"null", undef, undef, undef], "Convert::ASN1::Compiler"),
+    ],
+};
 
-# my $compiled = $asn->my_compile($verified);
-# dd $compiled;
+is_deeply $compiled, $null_compiled;
 
-# print ref $compiled->{""}[0], "\n";
+my $foo = $asn->prepare(' null NULL ') or warn $asn->error;
+dd $foo;
+dd $asn;
+ok $foo;
+my $buffed = $asn->encode(null => 1);
+is $buf, $buffed or warn $asn->error;
 
-# exit;
+dd $buf;
+dd $buffed;
 
-btest 23, $asn->prepare(' null NULL ') or warn $asn->error;
-stest 24, $buf, $asn->encode(null => 1) or warn $asn->error;
+say "Here and exit";
+exit;
+
 my $result = $asn->encode( null => 1 );
-btest 25, $ret = $asn->decode($buf) or warn $asn->error;
-print "RET\n";
-dd $ret;
+my $ret = $asn->decode($buf) or warn $asn->error;
+ok $ret;
+
+# print "RET\n";
+# dd $ret;
 # die;
-btest 26, $ret->{'null'};
+
+ok $ret->{'null'};
 
 ##
-## BOOLEAN 
+## BOOLEAN
 ##
 
-$test = 27;
-
-foreach $val (0,1,-99) {
+for my $val (0, 1, -99) {
   print "# BOOLEAN $val\n";
 
   my $result = pack("C*", 0x01, 0x01, $val ? 0xFF : 0);
 
-  btest $test++, $asn->prepare(' bool BOOLEAN') or warn $asn->error;
-  stest $test++, $result, $asn->encode(bool => $val) or warn $asn->error;
-  btest $test++, $ret = $asn->decode($result) or warn $asn->error;
-  ntest $test++, !!$val, !!$ret->{'bool'};
+  ok $asn->prepare(' bool BOOLEAN') or warn $asn->error;
+  is $result, $asn->encode(bool => $val) or warn $asn->error;
+  ok $ret = $asn->decode($result) or warn $asn->error;
+  is !!$val, !!$ret->{'bool'};
 }
 
 ##
@@ -125,23 +144,22 @@ my %INTEGER = (
   pack("C*", 0x02, 0x04, 0xC0, 0x00, 0x00, 0x00),	     -2**30,
 );
 
-while(($result,$val) = each %INTEGER) {
+while(my ($result,$val) = each %INTEGER) {
   print "# INTEGER $val\n";
 
-  btest $test++, $asn->prepare(' integer INTEGER') or warn $asn->error;
-  stest $test++, $result, $asn->encode(integer => $val) or warn $asn->error;
-  btest $test++, $ret = $asn->decode($result) or warn $asn->error;
-  ntest $test++, $val, $ret->{integer};
-
+  ok $asn->prepare(' integer INTEGER') or warn $asn->error;
+  is $result, $asn->encode(integer => $val) or warn $asn->error;
+  ok $ret = $asn->decode($result) or warn $asn->error;
+  is $val, $ret->{integer};
 }
 
-btest $test++, $asn->prepare('test ::= INTEGER ');
+ok $asn->prepare('test ::= INTEGER ');
 
 $result = pack("C*", 0x02, 0x01, 0x09);
 
-stest $test++, $result, $asn->encode(9) or warn $asn->error;
-btest $test++, $ret = $asn->decode($result) or warn $asn->error;
-btest $test++, $ret == 9;
+is $result, $asn->encode(9) or warn $asn->error;
+ok $ret = $asn->decode($result) or warn $asn->error;
+ok $ret == 9;
 
 ##
 ## STRING
@@ -152,13 +170,13 @@ my %STRING = (
   pack("CCa*", 0x04, 0x08, "A string"),   "A string",
 );
 
-while(($result,$val) = each %STRING) {
+while( my ($result,$val) = each %STRING) {
   print "# STRING '$val'\n";
 
-  btest $test++, $asn->prepare('str STRING') or warn $asn->error;
-  stest $test++, $result, $asn->encode(str => $val) or warn $asn->error;
-  btest $test++, $ret = $asn->decode($result) or warn $asn->error;
-  stest $test++, $val, $ret->{'str'};
+  ok $asn->prepare('str STRING') or warn $asn->error;
+  is $result, $asn->encode(str => $val) or warn $asn->error;
+  ok $ret = $asn->decode($result) or warn $asn->error;
+  is $val, $ret->{'str'};
 }
 
 ##
@@ -173,13 +191,13 @@ my %OBJECT_ID = (
 );
 
 
-while(($result,$val) = each %OBJECT_ID) {
+while( my ($result,$val) = each %OBJECT_ID) {
   print "# OBJECT_ID $val\n";
 
-  btest $test++, $asn->prepare('oid OBJECT IDENTIFIER') or warn $asn->error;
-  stest $test++, $result, $asn->encode(oid => $val) or warn $asn->error;
-  btest $test++, $ret = $asn->decode($result) or warn $asn->error;
-  stest $test++, $val, $ret->{'oid'};
+  ok $asn->prepare('oid OBJECT IDENTIFIER') or warn $asn->error;
+  is $result, $asn->encode(oid => $val) or warn $asn->error;
+  ok $ret = $asn->decode($result) or warn $asn->error;
+  is $val, $ret->{'oid'};
 }
 
 ##
@@ -192,13 +210,13 @@ my %ENUM = (
   pack("C*", 0x0A, 0x03, 0x64, 0x4D, 0x90), 6573456,
 );
 
-while(($result,$val) = each %ENUM) {
+while(my ($result,$val) = each %ENUM) {
   print "# ENUM $val\n";
 
-  btest $test++, $asn->prepare('enum ENUMERATED') or warn $asn->error;
-  stest $test++, $result, $asn->encode(enum => $val) or warn $asn->error;
-  btest $test++, $ret = $asn->decode($result) or warn $asn->error;
-  ntest $test++, $val, $ret->{'enum'};
+  ok $asn->prepare('enum ENUMERATED') or warn $asn->error;
+  is $result, $asn->encode(enum => $val) or warn $asn->error;
+  ok $ret = $asn->decode($result) or warn $asn->error;
+  is $val, $ret->{'enum'};
 }
 
 ##
@@ -219,15 +237,15 @@ my %BSTR = (
     [pack("B*",'011011111101110111'), 7, pack("B*", '01101110')]
 );
 
-while(($result,$val) = each %BSTR) {
+while(my ($result,$val) = each %BSTR) {
     print "# BIT STRING ", unpack("B*", ref($val) ? $val->[0] : $val),
 	" ",(ref($val) ? $val->[1] : $val),"\n";
 
-  btest $test++, $asn->prepare('bit BIT STRING') or warn $asn->error;
-  stest $test++, $result, $asn->encode( bit => $val) or warn $asn->error;
-  btest $test++, $ret = $asn->decode($result) or warn $asn->error;
-  stest $test++, (ref($val) ? $val->[2] : $val), $ret->{'bit'}[0];
-  ntest $test++, (ref($val) ? $val->[1] : 8*length$val), $ret->{'bit'}[1];
+  ok $asn->prepare('bit BIT STRING') or warn $asn->error;
+  is $result, $asn->encode( bit => $val) or warn $asn->error;
+  ok $ret = $asn->decode($result) or warn $asn->error;
+  is( (ref($val) ? $val->[2] : $val), $ret->{'bit'}[0]);
+  is( (ref($val) ? $val->[1] : 8*length$val), $ret->{'bit'}[1]);
 
 }
 
@@ -235,7 +253,6 @@ while(($result,$val) = each %BSTR) {
 ## REAL
 ##
 
-use POSIX qw(HUGE_VAL);
 
 my %REAL = (
   pack("C*", 0x09, 0x00),  0,
@@ -245,12 +262,12 @@ my %REAL = (
   pack("C*", 0x09, 0x01, 0x41),		    - HUGE_VAL(),
 );
 
-while(($result,$val) = each %REAL) {
+while(my ($result,$val) = each %REAL) {
   print "# REAL $val\n";
-  btest $test++, $asn->prepare('real REAL') or warn $asn->error;
-  stest $test++, $result, $asn->encode( real => $val) or warn $asn->error;
-  btest $test++, $ret = $asn->decode($result) or warn $asn->error;
-  ntest $test++, $val, $ret->{'real'};
+  ok $asn->prepare('real REAL') or warn $asn->error;
+  is $result, $asn->encode( real => $val) or warn $asn->error;
+  ok $ret = $asn->decode($result) or warn $asn->error;
+  is $val, $ret->{'real'};
 }
 
 ##
@@ -264,13 +281,13 @@ my %ROID = (
 );
 
 
-while(($result,$val) = each %ROID) {
+while(my ($result,$val) = each %ROID) {
   print "# RELATIVE-OID $val\n";
 
-  btest $test++, $asn->prepare('roid RELATIVE-OID') or warn $asn->error;
-  stest $test++, $result, $asn->encode(roid => $val) or warn $asn->error;
-  btest $test++, $ret = $asn->decode($result) or warn $asn->error;
-  stest $test++, $val, $ret->{'roid'};
+  ok $asn->prepare('roid RELATIVE-OID') or warn $asn->error;
+  is $result, $asn->encode(roid => $val) or warn $asn->error;
+  ok $ret = $asn->decode($result) or warn $asn->error;
+  is $val, $ret->{'roid'};
 }
 
 
@@ -289,13 +306,14 @@ my %BCD = (
 );
 
 
-while(($result,$val) = each %BCD) {
+while(my ($result,$val) = each %BCD) {
   print "# BCDString $val\n";
 
-  btest $test++, $asn->prepare('bcd BCDString') or warn $asn->error;
-  stest $test++, $result, $asn->encode(bcd => $val) or warn $asn->error;
-  btest $test++, $ret = $asn->decode($result) or warn $asn->error;
+  ok $asn->prepare('bcd BCDString') or warn $asn->error;
+  is $result, $asn->encode(bcd => $val) or warn $asn->error;
+  ok $ret = $asn->decode($result) or warn $asn->error;
   $val =~ s/\D.*//;
-  stest $test++, $val, $ret->{'bcd'};
+  is $val, $ret->{'bcd'};
 }
 
+done_testing();
