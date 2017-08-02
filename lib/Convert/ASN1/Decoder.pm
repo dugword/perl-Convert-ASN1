@@ -351,93 +351,138 @@ $choice_loop_gamma = sub {
     return ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop);
 };
 
+my $decode_top_for_loop;
+$decode_top_for_loop = sub {
+    my $buf = shift;
+    my $idx = shift;
+
+    my $optn = shift;
+    my $ops = shift;
+    my $stash = shift;
+    my $pos = shift;
+    my $end = shift;
+    my $seqof = shift;
+    my $larr = shift;
+
+    my $decode_op_for_loop;
+    $decode_op_for_loop = sub {
+        my $op = shift;
+        my $var = $op->[cVAR];
+
+        if (length $op->[cTAG]) {
+            ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var)
+                = &$tag_loop($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var);
+        }
+        else { # opTag length is zero, so it must be an ANY, CHOICE or EXTENSIONS
+            if ($op->[cTYPE] == opANY) {
+                ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var)
+                    = &$any_loop($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var)
+            }
+            elsif ($op->[cTYPE] == opCHOICE) {
+
+                CHOICELOOP: {
+                    my($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
+                        or do {
+                            return if $pos == $end and ($seqof || defined $op->[cEXT]);
+                            die "decode error";
+                        };
+
+                    my $extensions;
+
+                    my $choice_loop_for_loop;
+                    # foreach my $cop (@{$op->[cCHILD]}) 
+                    $choice_loop_for_loop = sub {
+                        my $cop = shift;
+
+                        if ($cop->[cTYPE] == opEXTENSIONS) {
+                            $extensions = 1;
+                            return 'next';
+                            # next;
+                        }
+
+                        elsif ($tag eq $cop->[cTAG]) {
+
+                            ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop)
+                                = &$choice_loop_alpha($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
+
+                            # redo CHOICELOOP if $seqof && $pos < $end;
+                            return 'choice loop' if $seqof && $pos < $end;
+                            return 'op';
+                        }
+
+
+                        elsif (! length $cop->[cTAG]) {
+                            ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop)
+                                = &$choice_loop_beta($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
+
+                            # redo CHOICELOOP if $seqof && $pos < $end;
+                            return 'choice loop' if $seqof && $pos < $end;
+                            return 'op';
+                        }
+
+                        elsif ($tag eq ($cop->[cTAG] | pack("C",ASN_CONSTRUCTOR))) {
+
+                            ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop)
+                                = &$choice_loop_gamma($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
+
+                            # redo CHOICELOOP if $seqof && $pos < $end;
+                            return 'choice loop' if $seqof && $pos < $end;
+                            return 'op';
+                        }
+                    };
+
+                    for my $cop (@{$op->[cCHILD]}) {
+                        my $result = &$choice_loop_for_loop($cop);
+                        if ($result eq 'op') {
+                            return;
+                        }
+
+                        if ($result eq 'choice loop') {
+                            redo CHOICELOOP;
+                        }
+                    }
+
+                    if ($pos < $end && $extensions) {
+                        $pos = $npos + $len + $indef;
+
+                        redo CHOICELOOP if $seqof && $pos < $end;
+                        return 'op';
+                    }
+                }
+
+                dd $op;
+                die "decode error" unless $op->[cEXT];
+            }
+            elsif ($op->[cTYPE] == opEXTENSIONS) {
+                $pos = $end; # Skip over the rest
+            }
+            else {
+                die "this point should never be reached";
+            }
+        }
+
+    };
+
+    foreach my $op (@{$ops}) {
+        &$decode_op_for_loop($op);
+    }
+
+    return ($buf, $idx, $optn, $ops, $stash, $pos, $end, $seqof, $larr);
+};
+
 sub _decode {
     my ($optn, $ops, $stash, $pos, $end, $seqof, $larr) = @_;
 
     my $idx = 0;
 
     # we try not to copy the input buffer at any time
+
+
     foreach my $buf ($_[-1]) {
-        OP:
-        foreach my $op (@{$ops}) {
-            my $next;
-            my $var = $op->[cVAR];
-
-            if (length $op->[cTAG]) {
-                ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var)
-                    = &$tag_loop($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var);
-            }
-            else { # opTag length is zero, so it must be an ANY, CHOICE or EXTENSIONS
-                if ($op->[cTYPE] == opANY) {
-                    ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var)
-                        = &$any_loop($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var)
-                }
-                elsif ($op->[cTYPE] == opCHOICE) {
-
-                    CHOICELOOP: {
-                        my($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
-                            or do {
-                                next OP if $pos == $end and ($seqof || defined $op->[cEXT]);
-                                die "decode error";
-                            };
-
-                        my $extensions;
-                        foreach my $cop (@{$op->[cCHILD]}) {
-                            if ($cop->[cTYPE] == opEXTENSIONS) {
-                                $extensions = 1;
-                                next;
-                            }
-
-                            if ($tag eq $cop->[cTAG]) {
-
-                                ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop)
-                                    = &$choice_loop_alpha($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
-
-                                redo CHOICELOOP if $seqof && $pos < $end;
-                                next OP;
-                            }
-
-
-                            unless (length $cop->[cTAG]) {
-                                ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop)
-                                    = &$choice_loop_beta($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
-
-                                redo CHOICELOOP if $seqof && $pos < $end;
-                                next OP;
-                            }
-
-                            if ($tag eq ($cop->[cTAG] | pack("C",ASN_CONSTRUCTOR))) {
-
-                                ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop)
-                                    = &$choice_loop_gamma($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
-
-                                redo CHOICELOOP if $seqof && $pos < $end;
-                                next OP;
-                            }
-                        }
-
-                        if ($pos < $end && $extensions) {
-                            $pos = $npos + $len + $indef;
-
-                            redo CHOICELOOP if $seqof && $pos < $end;
-                            next OP;
-                        }
-                    }
-
-                    # next OP if $next;
-                    dd $op;
-                    die "decode error" unless $op->[cEXT];
-                }
-                elsif ($op->[cTYPE] == opEXTENSIONS) {
-                    $pos = $end; # Skip over the rest
-                }
-                else {
-                    die "this point should never be reached";
-                }
-            }
-
-        }
+        ($buf, $idx, $optn, $ops, $stash, $pos, $end, $seqof, $larr)
+            = &$decode_top_for_loop($buf, $idx, $optn, $ops, $stash, $pos, $end, $seqof, $larr);
     }
+
     die "decode error $pos $end" unless $pos == $end;
 }
 
