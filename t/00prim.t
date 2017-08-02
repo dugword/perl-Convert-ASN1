@@ -1,14 +1,12 @@
 #!/usr/bin/env perl6
 
 use Test;
-use Data::Dump;
+# use Data::Dump;
 use experimental :pack;
 
 use lib 'lib';
 
 use Convert::ASN1P6 (:constant, :debug);
-
-plan 20;
 
 # asn-tag tests
 is-deeply asn-tag(ASN_CONTEXT, 1),
@@ -113,45 +111,30 @@ is-deeply %verified,
     %null-verified,
     'ASN " null NULL " verified correctly';
 
+# say %verified.perl;
 my %compiled = compile(%verified);
-my %null-compiled = {"" => [Compiled.new(
+my %null-compiled = "" => [Compiled.new(
     Buf.new(5),
     5,
     "null",
-    Mu,
     Any,
     Any,
-),]};
-
-is-deeply %compiled.perl,
-    %null-compiled.perl;
-
-
-say "what what";
-
-my $foo = $asn.prepare(' null NULL ');
-say $foo.WHAT;
-say $asn.perl;
-
-my %prepared = '' => '';
-my %null-prepared = {"" => [Compiled.new(
-    Buf.new(5),
-    5,
-    "null",
-    Mu,
     Any,
-    Any,
-),]};
+),];
 
-say %prepared.perl;
-is-deeply %prepared, %null-prepared;
+is-deeply %compiled,
+    %null-compiled;
 
 
+$asn.prepare(' null NULL ');
 my $encoded = $asn.encode( (null => 1) );
-say $encoded.perl;
-say "Done";
-exit;
+
+is $encoded, Buf.new(5,0);
+
+done-testing;
 
 # is $encoded, Buf.new(0x5, 0x0), 'null encoded';
 #
-# my $decoded = $asn.decode(Buf.new(0x5, 0x0));
+say "### Start ###";
+my $decoded = $asn.decode(Buf.new(0x5, 0x0));
+dd $decoded;

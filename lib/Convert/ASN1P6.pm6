@@ -1,5 +1,5 @@
 use v6;
-use Data::Dump;
+# use Data::Dump;
 use experimental :pack;
 
 my $tagdefault = 'IMPLICIT';
@@ -7,6 +7,8 @@ my $tagdefault = 'IMPLICIT';
 class Compiled is Array {}
 
 module Convert::ASN1P6 {
+# Some stupid global
+my @ctr;
 
 # Some numbering system constants
     my @_dec_real_base = (2,8,16);
@@ -328,20 +330,22 @@ module Convert::ASN1P6 {
 
             %!tree = %compiled;
             @!script = |(%compiled.values)[0];
+
+            return %compiled;
         }
 
         method encode(%stash) {
             # my $stash = @args == 1 ?? @args.shift !! { |@args };
 
-            say "Check this:";
-            dd %stash;
+            # say "Check this:";
+            # dd %stash;
             my $foo = _encode($!encoding, @!script, %stash);
 
             return $foo;
         }
 
         method decode(Buf $pdu) {
-
+            return myDecode($pdu, @!script);
         }
 
     }
@@ -714,10 +718,10 @@ module Convert::ASN1P6 {
 
         $yym = @length[$index];
         $val = $vs[$vsp + 1 - $yym];
-        say "Original \$val";
-        dd $val;
+        # say "Original \$val";
+        # dd $val;
 
-        say $val.WHAT;
+        # say $val.WHAT;
         # if $val.WHAT eq Block {
         #     say "It's a block";
         #     exit;
@@ -732,27 +736,27 @@ module Convert::ASN1P6 {
         }
 
         elsif ($index == 4) {
-            say "First \$val:";
-            dd $val;
+            # say "First \$val:";
+            # dd $val;
 
             $val = $vs[ $vsp - 3 ];
             # $val.{ $vs.[ $vsp - 2 ] } = [ $vs.[ $vsp ] ];
 
-            say "Second \$val:";
-            dd $val;
-            say "\$vsp";
-            dd $vsp;
-            say "\$vs";
-            dd $vs;
+            # say "Second \$val:";
+            # dd $val;
+            # say "\$vsp";
+            # dd $vsp;
+            # say "\$vs";
+            # dd $vs;
 
             my $foo = $vs[ $vsp - 2 ];
             my $bar = $vs[ $vsp ];
 
-            say "\$foo";
-            dd $foo;
+            # say "\$foo";
+            # dd $foo;
 
-            say "\$bar";
-            dd $bar;
+            # say "\$bar";
+            # dd $bar;
 
             $val{ $foo } = [ $bar ];
         }
@@ -1085,44 +1089,26 @@ module Convert::ASN1P6 {
     }
 
     sub compile-loop($op is copy, $tree is copy, $name is copy) {
-        say "Compile-loop op => ", $op;
-        say "here";
+        # say "Compile-loop op => ", $op;
+        # say "here";
 
-        say $op.perl;
+        # say $op.perl;
         if $op.isa('Array') {
-            say "here I be yo";
+            # say "here I be yo";
         }
         else {
-            say "blerg return";
+            # say "blerg return";
             return;
         }
 
-        say "### START LOOKING HERE ###";
-        say |$op;
-        say |$op;
-        say $op.values;
-        say $op.flat;
-        say "there";
-        say $op;
-        say $op;
-        say "there there";
-        say |$op;
-        say "pre-compiled op => ", $op.perl;
-        say $op.WHAT;
-        say |$op;
+        # say "pre-compiled op => ", $op.perl;
+        # say $op.WHAT;
         $op = Compiled.new($op.values);
-        say "Compiled op => ", $op.perl;
-        say "Compiled \$op.isa(Compiled) => ", $op.isa(Compiled);
-
-        for $op.values -> $value {
-            if $value.perl eq 'Mu' {
-                say "Found Mu";
-                exit;
-            }
-        };
+        # say "Compiled op => ", $op.perl;
+        # say "Compiled \$op.isa(Compiled) => ", $op.isa(Compiled);
 
         my $type = $op[cTYPE];
-        say "Type => ", $type;
+        # say "Type => ", $type;
 
 
         if ($type && (%base-type{$type}:exists)) {
@@ -1201,7 +1187,7 @@ module Convert::ASN1P6 {
                 $op.[cTYPE] = opSEQUENCE if $op.[cTYPE] == opSET;
             }
         }
-        say "DONE op => ", $op;
+        # say "DONE op => ", $op;
         return $op;
     };
 
@@ -1209,18 +1195,18 @@ module Convert::ASN1P6 {
 
         my @zops;
         for (@ops) -> $op is rw {
-            say "Op => ", $op;
+            # say "Op => ", $op;
             my $zop = compile-loop($op, %tree, $name);
             @zops.push($zop);
         }
-        dd @zops;
+        # dd @zops;
 
         return @zops;
     }
 
 
     sub compile(%tree) is export(:debug) {
-        say "Compiling...";
+        # say "Compiling...";
 
         # The tree should be valid enough to be able to
         #  - resolve references
@@ -1234,17 +1220,17 @@ module Convert::ASN1P6 {
         # compile it again.
 
         for %tree.kv -> $k, @v {
-            say "Key => ", $k;
-            say "Value => ", @v;
+            # say "Key => ", $k;
+            # say "Value => ", @v;
             my @zv = compile-one(%tree, @v, $k);
-            dd @zv;
-            dd $k;
-            say @zv[0];
+            # dd @zv;
+            # dd $k;
+            # say @zv[0];
             %tree{$k} = @zv;
 
         }
 
-        dd %tree;
+        # dd %tree;
         return %tree;
     }
 
@@ -1291,9 +1277,9 @@ module Convert::ASN1P6 {
     sub _encode($optn, @ops, %stash, @path = [], $buffer is copy = Buf.new) {
         my $var;
 
-        say "here";
-        dd @ops;
-        dd %stash;
+        # say "here";
+        # dd @ops;
+        # dd %stash;
         for @ops -> $op {
             next if $op.[cTYPE] == opEXTENSIONS;
 
@@ -1303,8 +1289,8 @@ module Convert::ASN1P6 {
 
             if (defined($var = $op.[cVAR])) {
                 @path.push($var);
-                say "stash here";
-                dd %stash;
+                # say "stash here";
+                # dd %stash;
                 die @path.join(".")," is undefined" unless defined %stash{$var};
             }
 
@@ -1644,784 +1630,919 @@ module Convert::ASN1P6 {
         die "No value found for CHOICE " ~ join(".", @(@_[6]));
     }
 
-
     sub _enc_bcd {
         my ($optn, $op, $stash, $var, $buf, $loop, $path) = @_;
 
-    my $str = ($var ~~ m:P5/^(\d+)/) ?? $0 !! "";
+        my $str = ($var ~~ m:P5/^(\d+)/) ?? $0 !! "";
 
-    $str ~= "F" if ($str.chars) +& 1;
-    $buf ~= asn-encode-length(($str.chars) / 2);
-    $buf ~= pack("H*", $str);
+        $str ~= "F" if ($str.chars) +& 1;
+        $buf ~= asn-encode-length(($str.chars) / 2);
+        $buf ~= pack("H*", $str);
 
-    return $buf;
+        return $buf;
     }
 
-# 
-#     my @_dec_real_base = (2, 8, 16);
-# 
-#     my @decode = (
-#     sub { die "internal error\n" },
-#     \&_dec_boolean,
-#     \&_dec_integer,
-#     \&_dec_bitstring,
-#     \&_dec_string,
-#     \&_dec_null,
-#     \&_dec_object_id,
-#     \&_dec_real,
-#     \&_dec_sequence,
-#     \&_dec_explicit,
-#     \&_dec_set,
-#     \&_dec_time,
-#     \&_dec_time,
-#     \&_dec_utf8,
-#     Any, # ANY
-#     Any, # CHOICE
-#     \&_dec_object_id,
-#     \&_dec_bcd,
-#     );
-# 
-#     my @ctr;
-#     @ctr[opBITSTR, opSTRING, opUTF8] = (\&_ctr_bitstring,\&_ctr_string,\&_ctr_string);
-# 
-#     sub decode {
-#         my $self  = shift;
-#         my $pdu = shift;
-# 
-#         my %stash;
-#         my $result;
-#         my $script = $self.{'script'};
-#         my $stash = \$result;
-# 
-#         # while ($script) {
-#         my $while_decode;
-# 
-#         $while_decode = sub {
-#             my $script = shift;
-#             my $child = $script.[0] or return;
-# 
-#             if (@$script > 1 or defined $child.[cVAR]) {
-#                 $result = $stash = \%stash;
-#                 say "result =\>";
-#                 dd $result;
-# 
-#                 return;
-#                 # last;
-#             }
-# 
-#             return if $child.[cTYPE] == opCHOICE or $child.[cLOOP];
-#             $script = $child.[cCHILD];
-# 
-#             return &$while_decode($script);
-#         };
-# 
-#         &$while_decode($script);
-# 
-#         say 'HERE IT BE GUY !';
-#         dd $stash;
-#         _decode(
-#             $self.{'options'},
-#             $self.{'script'},
-#             $stash,
-#             0,
-#             length $pdu,
-#             Any,
-#             {},
-#             $pdu,
-#         );
-# 
-#         say "final result";
-#         dd $result;
-#         say "final stash";
-#         dd $stash;
-# 
-#         return $result
-#     }
-# 
-#     sub _decode {
-#         my ($optn, $ops, $stash, $pos, $end, $seqof, $larr) = @_;
-#         my $idx = 0;
-# 
-#         # we try not to copy the input buffer at any time
-#         for (@_[*-1]) -> $buf {
-#             OP:
-#             foreach my $op (@($ops)) {
-#             my $var = $op.[cVAR];
-# 
-#             if (length $op.[cTAG]) {
-# 
-#             TAGLOOP: {
-#             my ($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
-#                 or do {
-#                 next OP if $pos==$end and ($seqof || defined $op.[cEXT]);
-#                 die "decode error";
-#                 };
-# 
-#             if ($tag eq $op.[cTAG]) {
-# 
-#                 my ($int_flag, $x_result) = &(@decode[$op.[cTYPE]])(
-#                 $optn,
-#                 $op,
-#                 $stash,
-#                 # We send 1 if there is not var as if there is the decode
-#                 # should be getting undef. So if it does not get undef
-#                 # it knows it has no variable
-#                 ($seqof ?? $seqof.[$idx++] !! defined($var) ?? $stash.{'$var'} !! ref($stash) eq 'SCALAR' ?? $$stash !! 1),
-#                 $buf,$npos,$len, $larr
-#                 );
-# 
-#                 if ($int_flag && $int_flag eq 'int') {
-#                     $seqof ?? $seqof.[$idx - 1] !! defined($var) ?? $stash.{'$var'} !! ref($stash) eq 'SCALAR' ?? $$stash !! Any = $x_result;
-#                 }
-# 
-#                 $pos = $npos+$len+$indef;
-# 
-#                 redo TAGLOOP if $seqof && $pos < $end;
-#                 next OP;
-#             }
-# 
-#             if ($tag eq ($op.[cTAG] +| pack("C",ASN_CONSTRUCTOR))
-#                 and my $ctr = @ctr[$op.[cTYPE]]) 
-#             {
-#                 _decode(
-#                 $optn,
-#                 [$op],
-#                 Any,
-#                 $npos,
-#                 $npos+$len,
-#                 (\my @ctrlist),
-#                 $larr,
-#                 $buf,
-#                 );
-# 
-#                 ($seqof ?? $seqof.[$idx++] !! defined($var) ?? $stash.{'$var'} !! ref($stash) eq 'SCALAR' ?? $$stash !! Any)
-#                 = &($ctr)(@ctrlist);
-#                 $pos = $npos+$len+$indef;
-# 
-#                 redo TAGLOOP if $seqof && $pos < $end;
-#                 next OP;
-# 
-#             }
-# 
-#             if ($seqof || defined $op.[cEXT]) {
-#                 next OP;
-#             }
-# 
-#             die "decode error " ~ unpack("H*",$tag) ~"\<=\>" ~ unpack("H*",$op.[cTAG]), " ",$pos," ",$op.[cTYPE]," ",$op.[cVAR]||'';
-#                 }
-#             }
-#             else { # opTag length is zero, so it must be an ANY, CHOICE or EXTENSIONS
-#             
-#             if ($op.[cTYPE] == opANY) {
-# 
-#             ANYLOOP: {
-# 
-#                 my ($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
-#                 or do {
-#                 next OP if $pos==$end and ($seqof || defined $op.[cEXT]);
-#                 die "decode error";
-#                 };
-# 
-#                 $len += $npos - $pos + $indef;
-# 
-#                     my $handler;
-#                     if ($op.[cDEFINE]) {
-#                     $handler = $optn.{'oidtable'} && $optn.{'oidtable'}{'$stash'.{'$op'.[cDEFINE]}};
-#                     $handler ||= $optn.{'handlers'}{'$op'.[cVAR]}{'$stash'.{'$op'.[cDEFINE]}};
-#                     }
-# 
-#                 ($seqof ?? $seqof.[$idx++] !! ref($stash) eq 'SCALAR' ?? $$stash !! $stash.{'$var'})
-#                 = $handler ?? $handler.decode(substr($buf,$pos,$len)) !! substr($buf,$pos,$len);
-# 
-#                 $pos += $len;
-# 
-#                 redo ANYLOOP if $seqof && $pos < $end;
-#             }
-#             }
-#             elsif ($op.[cTYPE] == opCHOICE) {
-# 
-#             CHOICELOOP: {
-#                 my ($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
-#                 or do {
-#                 next OP if $pos==$end and ($seqof || defined $op.[cEXT]);
-#                 die "decode error";
-#                 };
-#                 my $extensions;
-#                 for (@($op.[cCHILD])) -> $cop {
-# 
-#                 if ($tag eq $cop.[cTAG]) {
-# 
-#                 my $nstash = $seqof
-#                     ?? ($seqof.[$idx++]={})
-#                     !! defined($var)
-#                         ?? ($stash.{'$var'}={})
-#                         !! ref($stash) eq 'SCALAR'
-#                             ?? ($$stash={}) !! $stash;
-# 
-#                 my ($int_flag, $x_result) = &(@decode[$cop.[cTYPE]])(
-#                 $optn,
-#                 $cop,
-#                 $nstash,
-#                 ($cop.[cVAR] ?? $nstash.{'$cop'.[cVAR]} !! Any),
-#                 $buf,$npos,$len,$larr,
-#                 );
-#                 if ($int_flag && $int_flag eq 'int') {
-#                     ($cop.[cVAR] ?? $nstash.{'$cop'.[cVAR]} !! Any) = $x_result;
-# 
-#                 }
-# 
-#                 $pos = $npos+$len+$indef;
-# 
-#                 redo CHOICELOOP if $seqof && $pos < $end;
-#                 next OP;
-#                 }
-# 
-#                 if ($cop.[cTYPE] == opEXTENSIONS) {
-#                 $extensions = 1;
-#                 next;
-#                 }
-# 
-#                 unless (length $cop.[cTAG]) {
-#                 _decode(
-#                     $optn,
-#                     [$cop],
-#                     (\my %tmp_stash),
-#                     $pos,
-#                     $npos+$len+$indef,
-#                     Any,
-#                     $larr,
-#                     $buf,
-#                 );
-# 
-#                 my $nstash = $seqof
-#                     ?? ($seqof.[$idx++]={})
-#                     !! defined($var)
-#                         ?? ($stash.{'$var'}={})
-#                         !! ref($stash) eq 'SCALAR'
-#                             ?? ($$stash={}) !! $stash;
-# 
-#                 @($nstash){keys %tmp_stash} = values %tmp_stash;
-# 
-#                 $pos = $npos+$len+$indef;
-# 
-#                 redo CHOICELOOP if $seqof && $pos < $end;
-#                 next OP;
-#                 }
-# 
-#                 if ($tag eq ($cop.[cTAG] +| pack("C",ASN_CONSTRUCTOR))
-#                 and my $ctr = @ctr[$cop.[cTYPE]]) 
-#                 {
-#                 my $nstash = $seqof
-#                     ?? ($seqof.[$idx++]={})
-#                     !! defined($var)
-#                         ?? ($stash.{'$var'}={})
-#                         !! ref($stash) eq 'SCALAR'
-#                             ?? ($$stash={}) !! $stash;
-# 
-#                 _decode(
-#                 $optn,
-#                 [$cop],
-#                 Any,
-#                 $npos,
-#                 $npos+$len,
-#                 (\my @ctrlist),
-#                 $larr,
-#                 $buf,
-#                 );
-# 
-#                 $nstash.{'$cop'.[cVAR]} = &($ctr)(@ctrlist);
-#                 $pos = $npos+$len+$indef;
-# 
-#                 redo CHOICELOOP if $seqof && $pos < $end;
-#                 next OP;
-#                 }
-#                 }
-# 
-#                 if ($pos < $end && $extensions) {
-#                 $pos = $npos+$len+$indef;
-# 
-#                 redo CHOICELOOP if $seqof && $pos < $end;
-#                 next OP;
-#                 }
-#             }
-#             die "decode error" unless $op.[cEXT];
-#             }
-#             elsif ($op.[cTYPE] == opEXTENSIONS) {
-#                 $pos = $end; # Skip over the rest
-#                 }
-#             else {
-#             die "this point should never be reached";
-#             }
-#             }
-#             }
-#         }
-#         die "decode error $pos $end" unless $pos == $end;
-#     }
-# 
-#     sub _dec_boolean {
-# # 0      1    2       3     4     5     6
-# # $optn, $op, $stash, $var, $buf, $pos, $len
-# 
-#     @_[3] = unpack("C",substr(@_[4],@_[5],1)) ?? 1 !! 0;
-#     1;
-#     }
-# 
-# 
-#     sub _dec_integer {
-#         my ($optn, $op, $stash, $var, $buf, $pos, $len) = @_;
-# # 0      1    2       3     4     5     6
-# # $optn, $op, $stash, $var, $buf, $pos, $len
-# 
-#     $buf = substr(@_[4],@_[5],@_[6]);
-#     my $tmp = unpack("C",$buf) +& :16<80> ?? pack("C",255) !! pack("C",0);
-#     if ($len > 4) {
-#         $var = os2ip($buf, $optn.{'decode_bigint'} || 'Math::BigInt');
-#     } else {
-#         # N unpacks an unsigned value
-#         $var = unpack("l",pack("l",unpack("N", $tmp x (4 - $len) ~ $buf)));
-#     }
-# 
-#     return ('int', $var);
-#     # 1;
-#     }
-# 
-# 
-#     sub _dec_bitstring {
-# # 0      1    2       3     4     5     6
-# # $optn, $op, $stash, $var, $buf, $pos, $len
-# 
-#     @_[3] = [ substr(@_[4],@_[5]+1,@_[6]-1), (@_[6]-1)*8-unpack("C",substr(@_[4],@_[5],1)) ];
-#     1;
-#     }
-# 
-# 
-#     sub _dec_string {
-# # 0      1    2       3     4     5     6
-# # $optn, $op, $stash, $var, $buf, $pos, $len
-# 
-#     @_[3] = substr(@_[4],@_[5],@_[6]);
-#     1;
-#     }
-# 
-# 
-#     sub _dec_null {
-# # 0      1    2       3     4     5     6
-# # $optn, $op, $stash, $var, $buf, $pos, $len
-# 
-#     @_[3] = exists(@_[0].{'decode_null'}) ?? @_[0].{'decode_null'} !! 1;
-#     1;
-#     }
-# 
-# 
-#     sub _dec_object_id {
-# # 0      1    2       3     4     5     6
-# # $optn, $op, $stash, $var, $buf, $pos, $len
-# 
-#     my @data = unpack("w*",substr(@_[4],@_[5],@_[6]));
-#     if (@_[1].[cTYPE] == opOBJID and @data > 1) {
-#         if (@data[0] < 40) {
-#         splice(@data, 0, 1, 0, @data[0]);
-#         }
-#         elsif (@data[0] < 80) {
-#         splice(@data, 0, 1, 1, @data[0] - 40);
-#         }
-#         else {
-#         splice(@data, 0, 1, 2, @data[0] - 80);
-#         }
-#     }
-#     @_[3] = join(".", @data);
-#     1;
-#     }
-# 
-# 
-# 
-#     sub _dec_real {
-# # 0      1    2       3     4     5     6
-# # $optn, $op, $stash, $var, $buf, $pos, $len
-# 
-#     @_[3] = 0.0, return unless @_[6];
-# 
-#     my $first = unpack("C",substr(@_[4],@_[5],1));
-#     if ($first +& :16<80>) {
-#         # A real number
-# 
-#         my $exp;
-#         my $expLen = $first +& :16<3>;
-#         my $estart = @_[5]+1;
-# 
-#         if ($expLen == 3) {
-#         $estart++;
-#         $expLen = unpack("C",substr(@_[4],@_[5]+1,1));
-#         }
-#         else {
-#         $expLen++;
-#         }
-#         (Any, $exp) = _dec_integer(Any, Any, Any, $exp, @_[4],$estart,$expLen);
-# 
-#         my $mant = 0.0;
-#         for (reverse unpack("C*",substr(@_[4],$estart+$expLen,@_[6]-1-$expLen))) {
-#         $exp +=8, $mant = (($mant+$_) / 256) ;
-#         }
-# 
-#         $mant *= 1 +< (($first +> 2) +& :16<3>);
-#         $mant = - $mant if $first +& :16<40>;
-# 
-#         @_[3] = $mant * POSIX::pow(@_dec_real_base[($first +> 4) +& :16<3>], $exp);
-#         return;
-#     }
-#     elsif ($first +& :16<40>) {
-#         @_[3] =   POSIX::HUGE_VAL(),return if $first == :16<40>;
-#         @_[3] = - POSIX::HUGE_VAL(),return if $first == :16<41>;
-#     }
-# 
-#     die "REAL decode error\n";
-#     }
-# 
-# 
-#     sub _dec_explicit {
-# # 0      1    2       3     4     5     6     7
-# # $optn, $op, $stash, $var, $buf, $pos, $len, $larr
-# 
-#     local @_[1][cCHILD][0][cVAR] = @_[1][cVAR] unless @_[1][cCHILD][0][cVAR];
-# 
-#     _decode(
-#         @_[0], #optn
-#         @_[1].[cCHILD],   #ops
-#         @_[2], #stash
-#         @_[5], #pos
-#         @_[5]+@_[6], #end
-#         Any, #loop
-#         @_[7],
-#         @_[4], #buf
-#     );
-#     1;
-#     }
-#     sub _dec_sequence {
-# # 0      1    2       3     4     5     6     7
-# # $optn, $op, $stash, $var, $buf, $pos, $len, $larr
-# 
-#     if (defined( my $ch = @_[1].[cCHILD])) {
-#         _decode(
-#         @_[0], #optn
-#         $ch,   #ops
-#         (defined(@_[3]) || @_[1].[cLOOP]) ?? @_[2] !! (@_[3]= {}), #stash
-#         @_[5], #pos
-#         @_[5]+@_[6], #end
-#         @_[1].[cLOOP] && (@_[3]=[]), #loop
-#         @_[7],
-#         @_[4], #buf
-#         );
-#     }
-#     else {
-#         @_[3] = substr(@_[4],@_[5],@_[6]);
-#     }
-#     1;
-#     }
-# 
-# 
-#     sub _dec_set {
-# # 0      1    2       3     4     5     6     7
-# # $optn, $op, $stash, $var, $buf, $pos, $len, $larr
-# 
-#     # decode SET OF the same as SEQUENCE OF
-#     my $ch = @_[1].[cCHILD];
-#     goto &_dec_sequence if @_[1].[cLOOP] or ?^defined($ch);
-# 
-#     my ($optn, $pos, $larr) = @_[0,5,7];
-#     my $stash = defined(@_[3]) ?? @_[2] !! (@_[3]={});
-#     my $end = $pos + @_[6];
-#     my @done;
-#     my $extensions;
-# 
-#     while ($pos < $end) {
-#         my ($tag,$len,$npos,$indef) = _decode_tl(@_[4],$pos,$end,$larr)
-#         or die "decode error";
-# 
-#         my ($idx, $any, $done) = (-1);
-# 
-#     SET_OP:
-#         foreach my $op (@$ch) {
-#         $idx++;
-#         if (length($op.[cTAG])) {
-#         if ($tag eq $op.[cTAG]) {
-#         my $var = $op.[cVAR];
-#         my ($int_flag, $x_result) = &(@decode[$op.[cTYPE]])(
-#             $optn,
-#             $op,
-#             $stash,
-#             # We send 1 if there is not var as if there is the decode
-#             # should be getting undef. So if it does not get undef
-#             # it knows it has no variable
-#             (defined($var) ?? $stash.{'$var'} !! 1),
-#             @_[4],$npos,$len,$larr,
-#         );
-# 
-#             if ($int_flag && $int_flag eq 'int') {
-#                 defined($var) ?? $stash.{'$var'} !! Any = $x_result;
-#             }
-# 
-#         $done = $idx;
-#         last SET_OP;
-#         }
-#         if ($tag eq ($op.[cTAG] +| pack("C",ASN_CONSTRUCTOR))
-#             and my $ctr = @ctr[$op.[cTYPE]]) 
-#         {
-#         _decode(
-#             $optn,
-#             [$op],
-#             Any,
-#             $npos,
-#             $npos+$len,
-#             (\my @ctrlist),
-#             $larr,
-#             @_[4],
-#         );
-# 
-#         $stash.{'$op'.[cVAR]} = &($ctr)(@ctrlist)
-#             if defined $op.[cVAR];
-#         $done = $idx;
-#         last SET_OP;
-#         }
-#         next SET_OP;
-#         }
-#         elsif ($op.[cTYPE] == opANY) {
-#         $any = $idx;
-#         }
-#         elsif ($op.[cTYPE] == opCHOICE) {
-#         my $var = $op.[cVAR];
-#         for (@($op.[cCHILD])) -> $cop {
-#         if ($tag eq $cop.[cTAG]) {
-#             my $nstash = defined($var) ?? ($stash.{'$var'}={}) !! $stash;
-# 
-#             my ($int_flag, $x_result) = &(@decode[$cop.[cTYPE]])(
-#             $optn,
-#             $cop,
-#             $nstash,
-#             $nstash.{'$cop'.[cVAR]},
-#             @_[4],$npos,$len,$larr,
-#             );
-#             if ($int_flag && $int_flag eq 'int') {
-#             $nstash.{'$cop'.[cVAR]} = $x_result;
-# 
-#             }
-#             $done = $idx;
-#             last SET_OP;
-#         }
-#         if ($tag eq ($cop.[cTAG] +| pack("C",ASN_CONSTRUCTOR))
-#             and my $ctr = @ctr[$cop.[cTYPE]]) 
-#         {
-#             my $nstash = defined($var) ?? ($stash.{'$var'}={}) !! $stash;
-# 
-#             _decode(
-#             $optn,
-#             [$cop],
-#             Any,
-#             $npos,
-#             $npos+$len,
-#             (\my @ctrlist),
-#             $larr,
-#             @_[4],
-#             );
-# 
-#             $nstash.{'$cop'.[cVAR]} = &($ctr)(@ctrlist);
-#             $done = $idx;
-#             last SET_OP;
-#         }
-#         }
-#         }
-#         elsif ($op.[cTYPE] == opEXTENSIONS) {
-#         $extensions = $idx;
-#         }
-#         else {
-#         die "internal error";
-#         }
-#         }
-# 
-#         if (?^defined($done) and defined($any)) {
-#         my $var = $ch.[$any][cVAR];
-#         $stash.{'$var'} = substr(@_[4],$pos,$len+$npos-$pos) if defined $var;
-#         $done = $any;
-#         }
-# 
-#         if ( ?^defined($done) && defined($extensions) ) {
-#         $done = $extensions;
-#         }
-# 
-#         die "decode error" if ?^defined($done) or @done[$done]++;
-# 
-#         $pos = $npos + $len + $indef;
-#     }
-# 
-#     die "decode error" unless $end == $pos;
-# 
-#     for (0..@($ch).end) -> $idx {
-#         die "decode error" unless @done[$idx] or $ch.[$idx][cEXT] or $ch.[$idx][cTYPE] == opEXTENSIONS;
-#     }
-# 
-#     1;
-#     }
-# 
-# 
-#     my %_dec_time_opt = ( unixtime => 0, withzone => 1, raw => 2);
-# 
-#     sub _dec_time {
-# # 0      1    2       3     4     5     6
-# # $optn, $op, $stash, $var, $buf, $pos, $len
-# 
-#     my $mode = %_dec_time_opt{'$_'[0].{'decode_time'} || ''} || 0;
-# 
-#     if ($mode == 2 or @_[6] == 0) {
-#         @_[3] = substr(@_[4],@_[5],@_[6]);
-#         return;
-#     }
-# 
-#     my @bits = (substr(@_[4],@_[5],@_[6])
-#         ~~ m:P5/^((?:\d\d)?\d\d)(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)((?:\.\d{1,3})?)(([-+])(\d\d)(\d\d)|Z)/)
-#         or die "bad time format";
-# 
-#     if (@bits[0] < 100) {
-#         @bits[0] += 100 if @bits[0] < 50;
-#     }
-#     else {
-#         @bits[0] -= 1900;
-#     }
-#     @bits[1] -= 1;
-#     require Time::Local:from<Perl5>;
-#     my $time = Time::Local::timegm(@bits[5,4,3,2,1,0]);
-#     $time += @bits[6] if length @bits[6];
-#     my $offset = 0;
-#     if (@bits[7] ne 'Z') {
-#         $offset = @bits[9] * 3600 + @bits[10] * 60;
-#         $offset = -$offset if @bits[8] eq '-';
-#         $time -= $offset;
-#     }
-#     @_[3] = $mode ?? [$time,$offset] !! $time;
-#     }
-# 
-# 
-#     sub _dec_utf8 {
-# # 0      1    2       3     4     5     6
-# # $optn, $op, $stash, $var, $buf, $pos, $len
-#     @_[3] = Encode::decode('utf8', substr(@_[4],@_[5],@_[6]));
-#     }
-# 
-# 
-#     sub _decode_tl {
-#     my ($pos,$end,$larr) = @_[1,2,3];
-# 
-#     return if $pos >= $end;
-# 
-#     my $indef = 0;
-# 
-#     my $tag = substr(@_[0], $pos++, 1);
-# 
-#     if ((unpack("C",$tag) +& :16<1f>) == :16<1f>) {
-#         my $b;
-#         my $n=1;
-#         do {
-#         return if $pos >= $end;
-#         $tag ~= substr(@_[0],$pos++,1);
-#         $b = ord substr($tag,-1);
-#         } while ($b +& :16<80>);
-#     }
-#     return if $pos >= $end;
-# 
-#     my $len = ord substr(@_[0],$pos++,1);
-# 
-#     if ($len +& :16<80>) {
-#         $len +&= :16<7f>;
-# 
-#         if ($len) {
-#         return if $pos+$len > $end ;
-# 
-#         my $padding = $len < 4 ?? "\0" x (4 - $len) !! "";
-#         ($len,$pos) = (unpack("N", $padding ~ substr(@_[0],$pos,$len)), $pos+$len);
-#         }
-#         else {
-#         unless (exists $larr.{'$pos'}) {
-#             _scan_indef(@_[0],$pos,$end,$larr) or return;
-#         }
-#         $indef = 2;
-#         $len = $larr.{'$pos'};
-#         }
-#     }
-# 
-#     return if $pos+$len+$indef > $end;
-# 
-#     # return the tag, the length of the data, the position of the data
-#     # and the number of extra bytes for indefinate encoding
-# 
-#     ($tag, $len, $pos, $indef);
-#     }
-# 
-#     sub _dec_bcd {
-# # 0      1    2       3     4     5     6
-# # $optn, $op, $stash, $var, $buf, $pos, $len
-# 
-#     (@_[3] = unpack("H*", substr(@_[4],@_[5],@_[6]))) ~~ s:P5/[fF]$//;
-#     1;
-#     }
-# 
-#     sub os2ip {
-#         my ($os, $biclass) = @_;
-#         my $base = $biclass.new(256);
-#         my $result = $biclass.new(0);
-#         my $neg = unpack("C",$os) >= :16<80>
-#         and $os +^= pack("C",255) x length($os);
-#         for (unpack("C*",$os)) {
-#         $result = ($result * $base) + $_;
-#         }
-#         return $neg ?? ($result + 1) * -1 !! $result;
-#     }
-# 
-#     sub _scan_indef {
-#     my ($pos,$end,$larr) = @_[1,2,3];
-#     my @depth = ( $pos );
-# 
-#     while (@depth) {
-#         return if $pos+2 > $end;
-# 
-#         if (substr(@_[0],$pos,2) eq "\0\0") {
-#         my $end = $pos;
-#         my $stref = shift @depth;
-#         # replace pos with length = end - pos
-#         $larr.{'$stref'} = $end - $stref;
-#         $pos += 2;
-#         next;
-#         }
-# 
-#         my $tag = substr(@_[0], $pos++, 1);
-# 
-#         if ((unpack("C",$tag) +& :16<1f>) == :16<1f>) {
-#         my $b;
-#         do {
-#         $tag ~= substr(@_[0],$pos++,1);
-#         $b = ord substr($tag,-1);
-#         } while ($b +& :16<80>);
-#         }
-#         return if $pos >= $end;
-# 
-#         my $len = ord substr(@_[0],$pos++,1);
-# 
-#         if ($len +& :16<80>) {
-#         if ($len +&= :16<7f>) {
-#         return if $pos+$len > $end ;
-# 
-#         my $padding = $len < 4 ?? "\0" x (4 - $len) !! "";
-#         $pos += $len + unpack("N", $padding ~ substr(@_[0],$pos,$len));
-#         }
-#         else {
-#             # reserve another list element
-#             unshift @depth, $pos;
-#         }
-#         }
-#         else {
-#         $pos += $len;
-#         }
-#     }
-# 
-#     }
-# 
-#     sub _ctr_string { join '', @_ }
+    my @decode = (
+    sub { die "internal error\n" },
+        &_dec_boolean,
+        &_dec_integer,
+        &_dec_bitstring,
+        &_dec_string,
+        &_dec_null,
+        &_dec_object_id,
+        &_dec_real,
+        &_dec_sequence,
+        &_dec_explicit,
+        &_dec_set,
+        &_dec_time,
+        &_dec_time,
+        &_dec_utf8,
+        Any, # ANY
+        Any, # CHOICE
+        &_dec_object_id,
+        &_dec_bcd,
+    );
+
+    @ctr[opBITSTR, opSTRING, opUTF8] = (&_ctr_bitstring, &_ctr_string, &_ctr_string);
+    sub _ctr_bitstring {}
+
+    sub myDecode(Buf $pdu, @script) {
+        my %stash;
+        my $result;
+        my $stash;
+        my $options;
+
+        my $while_decode;
+
+        sub while_decode(@script) {
+            # say 'Inner script';
+            # dd @script;
+            my @child = |@script[0] or return;
+            # say '@child';
+            # dd @child;
+
+            # say '@child[cTYPE]';
+            # dd @child[cTYPE];
+
+            # say 'opCHOICE';
+            # dd opCHOICE;
+
+            # say '@child[cLOOP]';
+            # dd @child[cLOOP];
+
+            if (@script.elems > 1 or defined @child[cVAR]) {
+                $result = $stash = %stash;
+
+                return;
+            }
+
+            return if @child[cTYPE] == opCHOICE or @child[cLOOP];
+            @script = @child[cCHILD];
+
+            return $while_decode(@script);
+        };
+
+        # say '@script';
+        # dd @script;
+
+        while_decode(@script);
+        # say 'HERE IT BE GUY !';
+        # dd $stash;
+
+        # say "This is the thing to check";
+        # say '$pdu.bytes';
+        # say $pdu.bytes;
+
+        _decode(
+            optn    => $options,
+            ops     => @script,
+            stash   => $stash,
+            pre-pos => 0,
+            end     => $pdu.bytes,
+            seqof   => Any,
+            larr    => {},
+            pdu     => $pdu,
+        );
+
+        say "final result";
+        dd $result;
+        # say "final stash";
+        # dd $stash;
+
+        return $result
+    }
+
+    sub _decode(
+        :$optn,
+        :@ops,
+        :$stash,
+        :$pre-pos,
+        :$end,
+        :$seqof,
+        :$larr,
+        :$pdu,
+    ) {
+        # my ($optn, @ops, $stash, $pos, $end, $seqof, $larr) = @_;
+        # say "In _decode";
+
+        my $pos = $pre-pos;
+
+        # say '@ops';
+        # dd @ops;
+
+        # say '$pos';
+        # dd $pos;
+
+        # say '$end';
+        # dd $end;
+
+        my $idx = 0;
+
+        # we try not to copy the input buffer at any time
+        for ($pdu) -> $buf {
+            OP:
+            for @ops -> @op {
+                my $var = @op[cVAR];
+
+                if (@op[cTAG].elems) {
+                    TAGLOOP: {
+                        # say "check 1";
+
+                        my ($tag, $len, $npos, $indef)
+                            = _decode_tl($buf, $pos, $end, $larr) or do {
+                            next OP if $pos == $end and ($seqof || defined @op[cEXT]);
+                            die "decode error";
+                        };
+
+                        # say "Right before the crash";
+                        # dd $tag;
+                        if ($tag eq @op[cTAG]) {
+                            my ($int_flag, $x_result) = &(@decode[@op[cTYPE]])(
+                                $optn,
+                                @op,
+                                $stash,
+                                # We send 1 if there is not var as if there is the decode
+                                # should be getting undef. So if it does not get undef
+                                # it knows it has no variable
+                                ($seqof ?? $seqof[$idx++]
+                                    !! defined($var)
+                                    ?? $stash{'$var'}
+                                        !! ($stash.WHAT) eq 'SCALAR'
+                                        ?? $$stash
+                                            !! 1),
+                                $buf,$npos,$len, $larr
+                            );
+
+                            if ($int_flag && $int_flag eq 'int') {
+                                $seqof
+                                ?? $seqof[$idx - 1]
+                                    !! defined($var)
+                                    ?? $stash{'$var'}
+                                        !! $stash.WHAT eq 'SCALAR'
+                                        ?? $$stash
+                                            !! Any = $x_result;
+                            }
+
+                            say "Sure are a lot of these here";
+                            dd $npos;
+                            dd $len;
+                            dd $indef;
+                            $pos = $npos+$len+$indef;
+                            redo TAGLOOP if $seqof && $pos < $end;
+                            next OP;
+                        }
+
+                        if ($tag eq (@op[cTAG] +| pack("C",ASN_CONSTRUCTOR))
+                            and my $ctr = @ctr[@op[cTYPE]]) {
+
+                            _decode(
+                                optn    => $optn,
+                                ops     => [@op],
+                                stash   => Any,
+                                pre-pos => $npos,
+                                end     => $npos+$len,
+                                seqof   => (\my @ctrlist),
+                                larr    => $larr,
+                                pdu     => $buf,
+                            );
+ 
+                            ($seqof ?? $seqof[$idx++] !! defined($var)
+                            ?? $stash{'$var'} !! $stash.WHAT eq 'SCALAR' ?? $$stash !! Any)
+                                = &($ctr)(@ctrlist);
+                            say "even here";
+                            $pos = $npos + $len + $indef;
+
+                            redo TAGLOOP if $seqof && $pos < $end;
+                            next OP;
+                        }
+
+                        if ($seqof || defined @op[cEXT]) {
+                            next OP;
+                        }
+
+                        die "decode error " ~ ("H*",$tag.unpack("H*")) ~"\<=\>" ~ ("H*", @op[cTAG].unpack("H*")), " ", $pos, " ", @op[cTYPE], " ", @op[cVAR] || '';
+
+                    }
+                }
+
+
+                else { # opTag length is zero, so it must be an ANY, CHOICE or EXTENSIONS
+                    if (@op[cTYPE] == opANY) {
+
+                        ANYLOOP: {
+
+                            # say "check 2";
+                            my ($tag, $len, $npos, $indef) = _decode_tl($buf,$pos,$end,$larr)
+                                or do {
+                                    next OP if $pos==$end and ($seqof || defined @op[cEXT]);
+                                    die "decode error";
+                                };
+
+                            $len += $npos - $pos + $indef;
+
+                            my $handler;
+
+                            if (@op[cDEFINE]) {
+                                $handler = $optn.{'oidtable'} && $optn.{'oidtable'}{'$stash'.{'$op'.[cDEFINE]}};
+                                $handler ||= $optn.{'handlers'}{@op[cVAR]}{'$stash'.{@op.[cDEFINE]}};
+                            }
+
+                            ($seqof ?? $seqof.[$idx++] !! $stash.WHAT eq 'SCALAR' ?? $$stash !! $stash.{'$var'})
+                                = $handler ?? $handler.decode(substr($buf,$pos,$len)) !! substr($buf,$pos,$len);
+
+                            $pos += $len;
+
+                            redo ANYLOOP if $seqof && $pos < $end;
+                        }
+                    }
+
+                    elsif (@op[cTYPE] == opCHOICE) {
+
+                        CHOICELOOP: {
+                            # say "check 3";
+                            my ($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
+                                or do {
+                                    next OP if $pos==$end and ($seqof || defined @op[cEXT]);
+                                    die "decode error";
+                                };
+
+                            my $extensions;
+
+                            for (@(@op[cCHILD])) -> $cop {
+
+                                if ($tag eq $cop.[cTAG]) {
+
+                                    my $nstash = $seqof
+                                    ?? ($seqof.[$idx++]={})
+                                    !! defined($var)
+                                        ?? ($stash.{'$var'}={})
+                                        !! ($stash.WHAT) eq 'SCALAR'
+                                            ?? ($$stash={}) !! $stash;
+
+                                    my ($int_flag, $x_result) = &(@decode[$cop.[cTYPE]])(
+                                        $optn,
+                                        $cop,
+                                        $nstash,
+                                        ($cop.[cVAR] ?? $nstash.{'$cop'.[cVAR]} !! Any),
+                                        $buf,$npos,$len,$larr,
+                                    );
+
+                                    if ($int_flag && $int_flag eq 'int') {
+                                        ($cop.[cVAR] ?? $nstash.{'$cop'.[cVAR]} !! Any) = $x_result;
+                                    }
+
+                                    say "could be here";
+                                    $pos = $npos+$len+$indef;
+
+                                    redo CHOICELOOP if $seqof && $pos < $end;
+                                    next OP;
+                                }
+
+                                if ($cop.[cTYPE] == opEXTENSIONS) {
+                                    $extensions = 1;
+                                    next;
+                                }
+
+                                unless ($cop[cTAG].elems) {
+                                    _decode(
+                                        optn => $optn,
+                                        ops  => [$cop],
+                                        stash => (\my %tmp_stash),
+                                        pre-pos => $pos,
+                                        end => $npos+$len+$indef,
+                                        seqof => Any,
+                                        larr => $larr,
+                                        pdu => $buf,
+                                    );
+
+                                    my $nstash = $seqof
+                                        ?? ($seqof.[$idx++]={})
+                                        !! defined($var)
+                                            ?? ($stash.{'$var'}={})
+                                            !! $stash.WHAT eq 'SCALAR'
+                                                ?? ($$stash={}) !! $stash;
+
+                                    @($nstash){keys %tmp_stash} = values %tmp_stash;
+
+                                    say "maybe here";
+                                    $pos = $npos+$len+$indef;
+
+                                    redo CHOICELOOP if $seqof && $pos < $end;
+                                    next OP;
+                                }
+
+                                if ($tag eq ($cop.[cTAG] +| pack("C",ASN_CONSTRUCTOR))
+                                    and my $ctr = @ctr[$cop.[cTYPE]]) {
+
+                                    my $nstash = $seqof
+                                        ?? ($seqof.[$idx++]={})
+                                        !! defined($var)
+                                            ?? ($stash.{'$var'}={})
+                                            !! ($stash.WHAT) eq 'SCALAR'
+                                                ?? ($$stash={}) !! $stash;
+                                    _decode(
+                                        optn    => $optn,
+                                        ops     => [$cop],
+                                        stash   => Any,
+                                        pre-pos => $npos,
+                                        end     => $npos+$len,
+                                        seqof   => (\my @ctrlist),
+                                        larr    => $larr,
+                                        pdu     => $buf,
+                                    );
+
+                                    $nstash.{'$cop'.[cVAR]} = &($ctr)(@ctrlist);
+                                    say "or here";
+                                    $pos = $npos+$len+$indef;
+
+                                    redo CHOICELOOP if $seqof && $pos < $end;
+                                    next OP;
+                                }
+                            }
+
+                            if ($pos < $end && $extensions) {
+                                say "here";
+                                $pos = $npos+$len+$indef;
+
+                                redo CHOICELOOP if $seqof && $pos < $end;
+                                next OP;
+                            }
+                        }
+
+                        die "decode error" unless @op[cEXT];
+                    }
+
+                    elsif (@op[cTYPE] == opEXTENSIONS) {
+                        $pos = $end; # Skip over the rest
+                    }
+
+                    else {
+                        die "this point should never be reached";
+                    }
+                }
+            }
+        }
+        die "decode error $pos $end" unless $pos == $end;
+    }
+
+    sub _dec_boolean {
+        # 0      1    2       3     4     5     6
+        # $optn, $op, $stash, $var, $buf, $pos, $len
+        @_[3] = substr(
+            @_[4],
+            @_[5],
+            1
+        ).unpack("C") ?? 1 !! 0;
+
+        1;
+     }
+
+    sub _dec_integer {
+        my ($optn, $op, $stash, $var, $buf, $pos, $len) = @_;
+        # 0      1    2       3     4     5     6
+        # $optn, $op, $stash, $var, $buf, $pos, $len
+
+        $buf = substr(
+            @_[4],
+            @_[5],
+            @_[6]
+        );
+
+        my $tmp = ($buf.unpack("C")) +& :16<80> ?? pack("C",255) !! pack("C",0);
+
+        if ($len > 4) {
+            $var = os2ip($buf, $optn.{'decode_bigint'} || 'Math::BigInt');
+        }
+        else {
+            # N unpacks an unsigned value
+            $var = ("", pack("l", ($tmp x (4 - $len) ~ $buf).unpack("N")).unpack("l"));
+        }
+
+        return ('int', $var);
+    }
+
+    sub _dec_bitstring {
+        # 0      1    2       3     4     5     6
+        # $optn, $op, $stash, $var, $buf, $pos, $len
+
+        @_[3] = [ substr(@_[4],@_[5]+1,@_[6]-1), (@_[6]-1)*8 - ("C",substr(@_[4],@_[5],1)).unpack("C") ];
+
+        1;
+     }
+
+    sub _dec_string {
+        # 0      1    2       3     4     5     6
+        # $optn, $op, $stash, $var, $buf, $pos, $len
+        @_[3] = substr(@_[4],@_[5],@_[6]);
+        1;
+    }
+
+    sub _dec_null {
+        # 0      1    2       3     4     5     6
+        # $optn, $op, $stash, $var, $buf, $pos, $len
+
+        @_[3] = (@_[0].{'decode_null'}:exists) ?? @_[0].{'decode_null'} !! 1;
+        1;
+    }
+
+    sub _dec_object_id {
+        # 0      1    2       3     4     5     6
+        # $optn, $op, $stash, $var, $buf, $pos, $len
+
+        my @data = (substr(@_[4],@_[5],@_[6])).unpack("w*");
+
+        # if @_[1][cTYPE] == opOBJID and @data > 1 { # cTYPE == 1, opOBJID == 6
+        if @_[1][1] == 6 and @data > 1 {
+            if (@data[0] < 40) {
+                splice(@data, 0, 1, 0, @data[0]);
+            }
+            elsif (@data[0] < 80) {
+                splice(@data, 0, 1, 1, @data[0] - 40);
+            }
+            else {
+                splice(@data, 0, 1, 2, @data[0] - 80);
+            }
+        }
+
+        @_[3] = join(".", @data);
+        1;
+    }
+
+    sub _dec_real {
+        # 0      1    2       3     4     5     6
+        # $optn, $op, $stash, $var, $buf, $pos, $len
+
+        @_[3] = 0.0, return unless @_[6];
+
+        my $first = ("C",substr(@_[4],@_[5],1)).unpack("C");
+        if ($first +& :16<80>) {
+            # A real number
+
+            my $exp;
+            my $expLen = $first +& :16<3>;
+            my $estart = @_[5]+1;
+
+            if ($expLen == 3) {
+                $estart++;
+                $expLen = (substr(@_[4],@_[5]+1,1)).unpack("C");
+            }
+            else {
+                $expLen++;
+            }
+
+            (Any, $exp) = _dec_integer(Any, Any, Any, $exp, @_[4],$estart,$expLen);
+
+            my $mant = 0.0;
+            for (reverse ("C*",substr(@_[4],$estart+$expLen,@_[6]-1-$expLen)).unpack("C*")) {
+                $exp +=8, $mant = (($mant+$_) / 256) ;
+            }
+
+            $mant *= 1 +< (($first +> 2) +& :16<3>);
+            $mant = - $mant if $first +& :16<40>;
+
+            @_[3] = $mant * POSIX::pow(@_dec_real_base[($first +> 4) +& :16<3>], $exp);
+            return;
+        }
+
+        elsif ($first +& :16<40>) {
+            @_[3] =   POSIX::HUGE_VAL(),return if $first == :16<40>;
+            @_[3] = - POSIX::HUGE_VAL(),return if $first == :16<41>;
+        }
+
+        die "REAL decode error\n";
+    }
+
+
+    sub _dec_explicit {
+        # 0      1    2       3     4     5     6     7
+        # $optn, $op, $stash, $var, $buf, $pos, $len, $larr
+
+        # local @_[1][cCHILD][0][cVAR] = @_[1][cVAR] unless @_[1][cCHILD][0][cVAR];
+
+        _decode(
+            optn    => @_[0], #optn
+            ops     => @_[1].[cCHILD],   #ops
+            stash   => @_[2], #stash
+            pre-pos => @_[5], #pos
+            end     => @_[5]+@_[6], #end
+            seqof   => Any, #loop
+            larr    => @_[7],
+            pdu     => @_[4], #buf
+        );
+
+        1;
+    }
+
+    sub _dec_sequence {
+        # 0      1    2       3     4     5     6     7
+        # $optn, $op, $stash, $var, $buf, $pos, $len, $larr
+
+        if (defined( my $ch = @_[1].[cCHILD])) {
+
+            _decode(
+                optn    => @_[0], #optn
+                ops     => $ch,   #ops
+                stash   => (defined(@_[3]) || @_[1].[cLOOP]) ?? @_[2] !! (@_[3]= {}), #stash
+                pre-pos => @_[5], #pos
+                end     => @_[5]+@_[6], #end
+                seqof   => @_[1].[cLOOP] && (@_[3]=[]), #loop
+                larr    => @_[7],
+                pdu     => @_[4], #buf
+            );
+        }
+        else {
+            @_[3] = substr(@_[4],@_[5],@_[6]);
+        }
+
+        1;
+    }
+
+
+    sub _dec_set {
+        # 0      1    2       3     4     5     6     7
+        # $optn, $op, $stash, $var, $buf, $pos, $len, $larr
+
+        # decode SET OF the same as SEQUENCE OF
+        my $ch = @_[1].[cCHILD];
+        goto &_dec_sequence if @_[1].[cLOOP] or ?^defined($ch);
+
+        my ($optn, $pos, $larr) = @_[0,5,7];
+        my $stash = defined(@_[3]) ?? @_[2] !! (@_[3]={});
+        my $end = $pos + @_[6];
+        my @done;
+        my $extensions;
+
+        while ($pos < $end) {
+            # say "check 4";
+            my ($tag,$len,$npos,$indef) = _decode_tl(@_[4],$pos,$end,$larr)
+            or die "decode error";
+
+            my ($idx, $any, $done) = (-1);
+
+            SET_OP:
+            for @$ch -> @op {
+                $idx++;
+                if ((@op[cTAG]).elems) {
+                    if ($tag eq @op[cTAG]) {
+                        my $var = @op[cVAR];
+                        my ($int_flag, $x_result) = &(@decode[@op[cTYPE]])(
+                            $optn,
+                            @op,
+                            $stash,
+                            # We send 1 if there is not var as if there is the decode
+                            # should be getting undef. So if it does not get undef
+                            # it knows it has no variable
+                            (defined($var) ?? $stash.{'$var'} !! 1),
+                            @_[4],$npos,$len,$larr,
+                        );
+
+                        if ($int_flag && $int_flag eq 'int') {
+                            defined($var) ?? $stash.{'$var'} !! Any = $x_result;
+                        }
+
+                        $done = $idx;
+                        last SET_OP;
+                    }
+
+                    if ($tag eq (@op[cTAG] +| pack("C",ASN_CONSTRUCTOR))
+                        and my $ctr = @ctr[@op[cTYPE]]) {
+
+                        _decode(
+                            optn    => $optn,
+                            ops     => [@op],
+                            stash   => Any,
+                            pre-pos => $npos,
+                            end     => $npos+$len,
+                            seqof   => (\my @ctrlist),
+                            larr    => $larr,
+                            pdu     => @_[4],
+                        );
+
+                        $stash.{@op[cVAR]} = &($ctr)(@ctrlist) if defined @op[cVAR];
+
+                        $done = $idx;
+                        last SET_OP;
+                    }
+
+                    next SET_OP;
+                }
+
+                elsif (@op[cTYPE] == opANY) {
+                $any = $idx;
+            }
+
+            elsif (@op[cTYPE] == opCHOICE) {
+                my $var = @op[cVAR];
+
+                for (@(@op[cCHILD])) -> $cop {
+                    if ($tag eq $cop.[cTAG]) {
+                        my $nstash = defined($var) ?? ($stash.{'$var'}={}) !! $stash;
+
+                        my ($int_flag, $x_result) = &(@decode[$cop.[cTYPE]])(
+                            $optn,
+                            $cop,
+                            $nstash,
+                            $nstash.{'$cop'.[cVAR]},
+                            @_[4],$npos,$len,$larr,
+                        );
+
+                        if ($int_flag && $int_flag eq 'int') {
+                            $nstash.{'$cop'.[cVAR]} = $x_result;
+
+                        }
+
+                        $done = $idx;
+                        last SET_OP;
+                    }
+
+                    if ($tag eq ($cop.[cTAG] +| pack("C",ASN_CONSTRUCTOR))
+                        and my $ctr = @ctr[$cop.[cTYPE]]) {
+                        my $nstash = defined($var) ?? ($stash.{'$var'}={}) !! $stash;
+                            _decode(
+                                optn    => $optn,
+                                ops     => [$cop],
+                                stash   => Any,
+                                pre-pos => $npos,
+                                end     => $npos+$len,
+                                seqof   => (\my @ctrlist),
+                                larr    => $larr,
+                                pdu     => @_[4],
+                            );
+
+                            $nstash.{'$cop'.[cVAR]} = &($ctr)(@ctrlist);
+                            $done = $idx;
+                            last SET_OP;
+                    }
+                }
+            }
+            elsif (@op[cTYPE] == opEXTENSIONS) {
+                $extensions = $idx;
+            }
+            else {
+                die "internal error";
+            }
+        }
+
+        if (?^defined($done) and defined($any)) {
+            my $var = $ch.[$any][cVAR];
+            $stash.{'$var'} = substr(@_[4],$pos,$len+$npos-$pos) if defined $var;
+            $done = $any;
+        }
+
+        if ( ?^defined($done) && defined($extensions) ) {
+            $done = $extensions;
+        }
+
+        die "decode error" if ?^defined($done) or @done[$done]++;
+
+        $pos = $npos + $len + $indef;
+    }
+
+    die "decode error" unless $end == $pos;
+
+    for (0..@($ch).end) -> $idx {
+        die "decode error" unless @done[$idx] or $ch.[$idx][cEXT] or $ch.[$idx][cTYPE] == opEXTENSIONS;
+    }
+
+        1;
+    }
+
+    my %_dec_time_opt = ( unixtime => 0, withzone => 1, raw => 2);
+
+    sub _dec_time {
+        # 0      1    2       3     4     5     6
+        # $optn, $op, $stash, $var, $buf, $pos, $len
+
+        my $mode = %_dec_time_opt{'$_'[0].{'decode_time'} || ''} || 0;
+
+        if ($mode == 2 or @_[6] == 0) {
+            @_[3] = substr(@_[4],@_[5],@_[6]);
+            return;
+        }
+
+        my @bits = (substr(@_[4],@_[5],@_[6])
+            ~~ m:P5/^((?:\d\d)?\d\d)(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)((?:\.\d{1,3})?)(([-+])(\d\d)(\d\d)|Z)/)
+            or die "bad time format";
+
+        if (@bits[0] < 100) {
+            @bits[0] += 100 if @bits[0] < 50;
+        }
+        else {
+            @bits[0] -= 1900;
+        }
+
+        @bits[1] -= 1;
+        require Time::Local:from<Perl5>;
+        my $time = Time::Local::timegm(@bits[5,4,3,2,1,0]);
+        $time += @bits[6] if @bits[6].elems;
+        my $offset = 0;
+
+        if (@bits[7] ne 'Z') {
+            $offset = @bits[9] * 3600 + @bits[10] * 60;
+            $offset = -$offset if @bits[8] eq '-';
+            $time -= $offset;
+        }
+
+        @_[3] = $mode ?? [$time,$offset] !! $time;
+    }
+
+
+    sub _dec_utf8 {
+        # 0      1    2       3     4     5     6
+        # $optn, $op, $stash, $var, $buf, $pos, $len
+        @_[3] = Encode::decode('utf8', substr(@_[4],@_[5],@_[6]));
+    }
+
+    sub _decode_tl($pre-tag, $pos is copy, $end, $larr) {
+        # my ($pos,$end,$larr) = @_[1,2,3];
+
+        # say '$pos';
+        # dd $pos;
+
+        # say '$end';
+        # dd $end;
+
+        if ($pos >= $end) {
+            # say "Returning early: 1";
+            return;
+        }
+
+        my $indef = 0;
+
+        # say "here is where you want to check";
+        # say '$pre-tag';
+        # dd $pre-tag;
+
+        my $tag = $pre-tag.subbuf($pos++, 1);
+
+        # say '$tag';
+        # dd $tag;
+
+        if ((($tag.unpack("C")) +& :16<1f>) == :16<1f>) {
+            my $b;
+            my $n=1;
+            repeat {
+                if ($pos >= $end) {
+                    # say "Returning early: 2";
+                    return;
+                }
+                $tag ~= substr(@_[0],$pos++,1);
+                $b = ord substr($tag,-1);
+            } while ($b +& :16<80>);
+        }
+
+        if ($pos >= $end) {
+            # say "Returning early: 3";
+            return;
+        }
+
+        my $len = ($pre-tag.subbuf($pos++,1)).unpack("C");
+
+        if ($len +& :16<80>) {
+            $len +&= :16<7f>;
+
+            if ($len) {
+                if ($pos+$len > $end) {
+                    # say "Returning early: 4";
+                    return;
+                }
+
+                my $padding = $len < 4 ?? "\0" x (4 - $len) !! "";
+                ($len,$pos) = ($padding ~ substr($pre-tag,$pos,$len).unpack("N"), $pos+$len);
+            }
+            else {
+                unless ( $larr.{'$pos'}:exists) {
+                    # _scan_indef($pre-tag,$pos,$end,$larr) or (say "Returning early: 5" && return);
+                    _scan_indef($pre-tag,$pos,$end,$larr) or return;
+                }
+                $indef = 2;
+                $len = $larr.{'$pos'};
+            }
+        }
+
+        # say '$pre-tag';
+        # dd $pre-tag;
+
+        # say '$pos';
+        # dd $pos;
+
+        # say '$len';
+        # dd $len;
+
+        # say '$indef';
+        # dd $indef;
+
+        # say '$end';
+        # dd $end;
+
+        # HACK: Don't know if this is how it worked under P5
+        # my $unpacked-len = $len.unpack("C");
+
+        if ($pos + $len + $indef > $end) {
+            # say "Returning early: 6";
+            return;
+        }
+
+        # return the tag, the length of the data, the position of the data
+        # and the number of extra bytes for indefinate encoding
+
+        # say "Returning end";
+        return ($tag, $len, $pos, $indef);
+    }
+
+    sub _dec_bcd {
+        # 0      1    2       3     4     5     6
+        # $optn, $op, $stash, $var, $buf, $pos, $len
+
+        (@_[3] = (substr(@_[4],@_[5],@_[6])).unpack("H*")) ~~ s:P5/[fF]$//;
+        1;
+    }
+
+    sub os2ip {
+        my ($os, $biclass) = @_;
+        my $base = $biclass.new(256);
+        my $result = $biclass.new(0);
+        my $neg = $os.unpack("C") >= :16<80>
+            and $os +^= pack("C",255) x ($os.elems);
+
+        for ($os.unpack("C*")) {
+            $result = ($result * $base) + $_;
+        }
+
+        return $neg ?? ($result + 1) * -1 !! $result;
+    }
+
+    sub _scan_indef {
+        my ($pos,$end,$larr) = @_[1,2,3];
+        my @depth = ( $pos );
+
+        while (@depth) {
+            return if $pos+2 > $end;
+
+            if (substr(@_[0],$pos,2) eq "\0\0") {
+                my $end = $pos;
+                my $stref = shift @depth;
+                # replace pos with length = end - pos
+                $larr.{'$stref'} = $end - $stref;
+                $pos += 2;
+                next;
+            }
+
+            my $tag = substr(@_[0], $pos++, 1);
+
+            if ($tag.unpack("C") +& :16<1f>) == :16<1f> {
+                my $b;
+                repeat {
+                    $tag ~= substr(@_[0],$pos++,1);
+                    $b = ord substr($tag,-1);
+                } while ($b +& :16<80>);
+            }
+
+            return if $pos >= $end;
+
+            my $len = ord substr(@_[0],$pos++,1);
+
+            if ($len +& :16<80>) {
+                if ($len +&= :16<7f>) {
+                    return if $pos+$len > $end ;
+
+                    my $padding = $len < 4 ?? "\0" x (4 - $len) !! "";
+                    $pos += $len + ($padding ~ substr(@_[0],$pos,$len)).unpack("N");
+                }
+                else {
+                    # reserve another list element
+                    unshift @depth, $pos;
+                }
+            }
+            else {
+                $pos += $len;
+            }
+        }
+
+    }
+
+    sub _ctr_string {
+        return @_.join
+    }
 
 }

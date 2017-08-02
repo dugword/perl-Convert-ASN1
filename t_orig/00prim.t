@@ -91,22 +91,18 @@ my $null_compiled = {
 
 is_deeply $compiled, $null_compiled;
 
-my $foo = $asn->prepare(' null NULL ') or warn $asn->error;
-dd $foo;
-dd $asn;
-ok $foo;
+$asn->prepare(' null NULL ') or warn $asn->error;
 my $buffed = $asn->encode(null => 1);
 is $buf, $buffed or warn $asn->error;
 
-dd $buf;
-dd $buffed;
-
-say "Here and exit";
-exit;
-
-my $result = $asn->encode( null => 1 );
+# my $result = $asn->encode( null => 1 );
 my $ret = $asn->decode($buf) or warn $asn->error;
-ok $ret;
+# say "here is buf => \\";
+# dd $buf;
+# ok $ret;
+# say "Here is ret => \\";
+# dd $ret;
+# exit;
 
 # print "RET\n";
 # dd $ret;
@@ -155,7 +151,7 @@ while(my ($result,$val) = each %INTEGER) {
 
 ok $asn->prepare('test ::= INTEGER ');
 
-$result = pack("C*", 0x02, 0x01, 0x09);
+my $result = pack("C*", 0x02, 0x01, 0x09);
 
 is $result, $asn->encode(9) or warn $asn->error;
 ok $ret = $asn->decode($result) or warn $asn->error;
