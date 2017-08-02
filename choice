@@ -1,0 +1,19 @@
+use 5.026;
+use strict;
+use warnings;
+
+my $blerg;
+
+FOO: {
+for my $i (0 .. 10) {
+    if ($i == 4) {
+        unless ($blerg) {
+            say "blerg";
+        say "Four";
+        $blerg = 1;
+        redo FOO;
+        }
+    }
+    say "HERE => ", $i;
+}
+}
