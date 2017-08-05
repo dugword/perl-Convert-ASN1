@@ -218,6 +218,7 @@ sub decode {
 
 my $choice_loop_alpha;
 $choice_loop_alpha = sub {
+    say "In loop alpha";
 
     my $buf = shift;
     my $pos = shift;
@@ -259,10 +260,13 @@ $choice_loop_alpha = sub {
 
     $pos = $npos + $len + $indef;
 
+    say "In loop alpha the \$tag is =>";
+    dd $tag;
     return ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop);
 };
 
 my $choice_loop_beta;
+say "In choice loop beta";
 $choice_loop_beta = sub {
 
     my $buf = shift;
@@ -308,6 +312,7 @@ $choice_loop_beta = sub {
 
 my $choice_loop_gamma;
 $choice_loop_gamma = sub {
+    say "In choice loop gamma";
 
     my $buf = shift;
     my $pos = shift;
@@ -351,6 +356,80 @@ $choice_loop_gamma = sub {
     return ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop);
 };
 
+my $choice_loop_for_loop;
+# foreach my $cop (@{$op->[cCHILD]}) 
+$choice_loop_for_loop = sub {
+    say "loop";
+    my $cop = shift;
+my $extensions = shift;
+    my $buf = shift;
+    my $pos = shift;
+    my $end = shift;
+    my $larr = shift;
+    my $seqof = shift;
+    my $op = shift;
+    my $optn = shift;
+    my $stash = shift;
+    my $idx = shift;
+    my $var = shift;
+    my $tag = shift;
+    my $len = shift; 
+    my $npos = shift;
+    my $indef = shift;
+
+    say "\$var => ";
+    dd $var;
+
+    say "\$tag => ";
+    dd $tag;
+
+    if ($cop->[cTYPE] == opEXTENSIONS) {
+        say "There is an extension";
+        $extensions = 1;
+        return        ('next', $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef);
+        # next;
+    }
+
+    elsif ($tag eq $cop->[cTAG]) {
+        say "In here 1";
+
+        ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop)
+            = &$choice_loop_alpha($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
+
+        # redo CHOICELOOP if $seqof && $pos < $end;
+        # say "\$seqof && \$pos < \$end is => @{[ $seqof && $pos < $end ]}";
+        return ('choice loop', $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef) if $seqof && $pos < $end;
+        return         ('op',  $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef);
+    }
+
+
+    elsif (! length $cop->[cTAG]) {
+        say "maybe here 2";
+        ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop)
+            = &$choice_loop_beta($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
+
+        # redo CHOICELOOP if $seqof && $pos < $end;
+        return ('choice loop', $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef) if $seqof && $pos < $end;
+        return          ('op', $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef);
+    }
+
+    elsif ($tag eq ($cop->[cTAG] | pack("C",ASN_CONSTRUCTOR))) {
+        say "Or even here 3";
+
+        ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop)
+            = &$choice_loop_gamma($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
+
+        # redo CHOICELOOP if $seqof && $pos < $end;
+        return ('choice loop', $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef) if $seqof && $pos < $end;
+        return          ('op', $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef);
+    }
+
+    say "Nothing to loop on";
+    say "Value of \$tag when there is nothing to loop on =>";
+    return          ('next', $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef);
+    dd $tag;
+};
+
 my $decode_top_for_loop;
 $decode_top_for_loop = sub {
     my $buf = shift;
@@ -387,57 +466,31 @@ $decode_top_for_loop = sub {
                             die "decode error";
                         };
 
+                    say "in choice loop \$tag is =>";
+                    dd $tag;
+
                     my $extensions;
 
-                    my $choice_loop_for_loop;
-                    # foreach my $cop (@{$op->[cCHILD]}) 
-                    $choice_loop_for_loop = sub {
-                        my $cop = shift;
-
-                        if ($cop->[cTYPE] == opEXTENSIONS) {
-                            $extensions = 1;
-                            return 'next';
-                            # next;
-                        }
-
-                        elsif ($tag eq $cop->[cTAG]) {
-
-                            ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop)
-                                = &$choice_loop_alpha($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
-
-                            # redo CHOICELOOP if $seqof && $pos < $end;
-                            return 'choice loop' if $seqof && $pos < $end;
-                            return 'op';
-                        }
-
-
-                        elsif (! length $cop->[cTAG]) {
-                            ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop)
-                                = &$choice_loop_beta($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
-
-                            # redo CHOICELOOP if $seqof && $pos < $end;
-                            return 'choice loop' if $seqof && $pos < $end;
-                            return 'op';
-                        }
-
-                        elsif ($tag eq ($cop->[cTAG] | pack("C",ASN_CONSTRUCTOR))) {
-
-                            ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop)
-                                = &$choice_loop_gamma($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
-
-                            # redo CHOICELOOP if $seqof && $pos < $end;
-                            return 'choice loop' if $seqof && $pos < $end;
-                            return 'op';
-                        }
-                    };
 
                     for my $cop (@{$op->[cCHILD]}) {
-                        my $result = &$choice_loop_for_loop($cop);
+                        say "in a real for loop";
+                        my $result;
+
+                        say "in a real for loop \$tag is =>";
+                        dd $tag;
+                        say "if this is undef, this is where things break";
+                        ($result, $cop, $extensions, $buf,  $pos,  $end,  $larr,  $seqof,  $op,  $optn,  $stash,  $idx,  $var,  $tag,  $len,  $npos,  $indef)
+                            = &$choice_loop_for_loop($cop, $extensions, $buf,  $pos,  $end,  $larr,  $seqof,  $op,  $optn,  $stash,  $idx,  $var,  $tag,  $len,  $npos,  $indef);
+
+                        say "What is the  value of \$tag here? => ";
+                        dd $tag;
+
                         if ($result eq 'op') {
                             return;
                         }
 
                         if ($result eq 'choice loop') {
+                            say 'redoing choice loop';
                             redo CHOICELOOP;
                         }
                     }
