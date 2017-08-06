@@ -12,28 +12,28 @@ use Data::Dump;
 my @_dec_real_base = (2, 8, 16);
 
 my @decode = (
-  sub { die "internal error\n" },
-  \&_dec_boolean,
-  \&_dec_integer,
-  \&_dec_bitstring,
-  \&_dec_string,
-  \&_dec_null,
-  \&_dec_object_id,
-  \&_dec_real,
-  \&_dec_sequence,
-  \&_dec_explicit,
-  \&_dec_set,
-  \&_dec_time,
-  \&_dec_time,
-  \&_dec_utf8,
-  undef, # ANY
-  undef, # CHOICE
-  \&_dec_object_id,
-  \&_dec_bcd,
+    sub { die "internal error\n" },
+    \&_dec_boolean,
+    \&_dec_integer,
+    \&_dec_bitstring,
+    \&_dec_string,
+    \&_dec_null,
+    \&_dec_object_id,
+    \&_dec_real,
+    \&_dec_sequence,
+    \&_dec_explicit,
+    \&_dec_set,
+    \&_dec_time,
+    \&_dec_time,
+    \&_dec_utf8,
+    undef, # ANY
+    undef, # CHOICE
+    \&_dec_object_id,
+    \&_dec_bcd,
 );
 
 my @ctr;
-@ctr[opBITSTR, opSTRING, opUTF8] = (\&_ctr_bitstring,\&_ctr_string,\&_ctr_string);
+@ctr[opBITSTR, opSTRING, opUTF8] = (\&_ctr_bitstring, \&_ctr_string, \&_ctr_string);
 
 my $tag_loop;
 
@@ -49,30 +49,44 @@ $tag_loop = sub {
     my $idx = shift;
     my $var = shift;
 
-    my($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
-        or do {
-            if (($pos == $end) and ($seqof || defined $op->[cEXT])) {
-                return ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var);
-            }
+    my($error, $tag, $len, $npos, $indef) = _decode_tl($buf, $pos, $end, $larr);
 
-            die "decode error";
-        };
+    if ($error) {
+        if (($pos == $end) and ($seqof || defined $op->[cEXT])) {
+            return ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var);
+        }
+        die "decode error";
+    }
 
     if ($tag eq $op->[cTAG]) {
+
+        # We send 1 if there is not var as if there is the decode
+        # should be getting undef. So if it does not get undef
+        # it knows it has no variable
+        # my $foo = ($seqof ? $seqof->[$idx++] : defined($var) ? $stash->{$var} : ref($stash) eq 'SCALAR' ? $$stash : 1);
 
         my ($int_flag, $x_result) = &{$decode[$op->[cTYPE]]}(
             $optn,
             $op,
             $stash,
-            # We send 1 if there is not var as if there is the decode
-            # should be getting undef. So if it does not get undef
-            # it knows it has no variable
             ($seqof ? $seqof->[$idx++] : defined($var) ? $stash->{$var} : ref($stash) eq 'SCALAR' ? $$stash : 1),
-            $buf,$npos,$len, $larr
+            # $foo,
+            $buf,
+            $npos,
+            $len,
+            $larr,
         );
 
-        if ($int_flag && $int_flag eq 'int') {
-            $seqof ? $seqof->[$idx - 1] : defined($var) ? $stash->{$var} : ref($stash) eq 'SCALAR' ? $$stash : undef = $x_result;
+        if ($int_flag && ($int_flag eq 'int' || $int_flag eq 'bcd')) {
+            if ($seqof) {
+                $seqof->[$idx - 1] = $x_result;
+            }
+            elsif (defined($var)) {
+                $stash->{$var} = $x_result;
+            }
+            elsif (ref($stash) eq 'SCALAR') {
+                $$stash = $x_result;
+            }
         }
 
         $pos = $npos + $len + $indef;
@@ -84,7 +98,8 @@ $tag_loop = sub {
         return ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var);
     }
 
-    if ($tag eq ($op->[cTAG] | pack("C",ASN_CONSTRUCTOR)) and my $ctr = $ctr[$op->[cTYPE]]) {
+    if ($tag eq ($op->[cTAG] | pack("C",ASN_CONSTRUCTOR))) {
+        my $ctr = $ctr[$op->[cTYPE]];
 
         _decode(
             $optn,
@@ -131,15 +146,15 @@ $any_loop = sub {
     my $idx = shift;
     my $var = shift;
 
-    my($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
-        or do {
+    my($error, $tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr);
+    if ($error) {
 
         if ($pos == $end and ($seqof || defined $op->[cEXT])) {
             return ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var);
         }
 
         die "decode error";
-    };
+    }
 
     $len += $npos - $pos + $indef;
 
@@ -254,7 +269,7 @@ $choice_loop_alpha = sub {
         $larr,
     );
 
-    if ($int_flag && $int_flag eq 'int') {
+    if ($int_flag && ($int_flag eq 'int' || $int_flag eq 'bcd')) {
         ($cop->[cVAR] ? $nstash->{$cop->[cVAR]} : undef) = $x_result;
     }
 
@@ -396,8 +411,6 @@ my $extensions = shift;
         ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop)
             = &$choice_loop_alpha($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
 
-        # redo CHOICELOOP if $seqof && $pos < $end;
-        # say "\$seqof && \$pos < \$end is => @{[ $seqof && $pos < $end ]}";
         return ('choice loop', $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef) if $seqof && $pos < $end;
         return         ('op',  $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef);
     }
@@ -408,7 +421,6 @@ my $extensions = shift;
         ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop)
             = &$choice_loop_beta($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
 
-        # redo CHOICELOOP if $seqof && $pos < $end;
         return ('choice loop', $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef) if $seqof && $pos < $end;
         return          ('op', $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef);
     }
@@ -419,7 +431,6 @@ my $extensions = shift;
         ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop)
             = &$choice_loop_gamma($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var,$tag,$len,$npos,$indef, $cop);
 
-        # redo CHOICELOOP if $seqof && $pos < $end;
         return ('choice loop', $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef) if $seqof && $pos < $end;
         return          ('op', $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef);
     }
@@ -428,6 +439,71 @@ my $extensions = shift;
     say "Value of \$tag when there is nothing to loop on =>";
     return          ('next', $cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef);
     dd $tag;
+};
+
+my $choice_loop;
+
+$choice_loop = sub {
+    my $buf = shift;
+    my $pos = shift;
+    my $end = shift;
+    my $larr = shift;
+    my $seqof = shift;
+    my $op = shift;
+    my $optn = shift;
+    my $stash = shift;
+    my $idx = shift;
+    my $var = shift;
+
+
+    my($error, $tag, $len, $npos, $indef) = _decode_tl($buf, $pos, $end, $larr);
+    if ($error) {
+            return
+    ('op', $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var)
+
+            if $pos == $end and ($seqof || defined $op->[cEXT]);
+            die "decode error";
+    }
+
+    say "in choice loop \$tag is =>";
+    dd $tag;
+
+    my $extensions;
+
+
+    for my $cop (@{$op->[cCHILD]}) {
+        say "in a real for loop";
+        my $result;
+
+        say "in a real for loop \$tag is =>";
+        dd $tag;
+        say "if this is undef, this is where things break";
+        ($result, $cop, $extensions, $buf,  $pos,  $end,  $larr,  $seqof,  $op,  $optn,  $stash,  $idx,  $var,  $tag,  $len,  $npos,  $indef)
+            = &$choice_loop_for_loop($cop, $extensions, $buf,  $pos,  $end,  $larr,  $seqof,  $op,  $optn,  $stash,  $idx,  $var,  $tag,  $len,  $npos,  $indef);
+
+        say "What is the  value of \$tag here? => ";
+        dd $tag;
+
+        if ($result eq 'op') {
+            return
+    ('op', $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var)
+            ;
+        }
+
+        if ($result eq 'choice loop') {
+            return &$choice_loop($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var);
+        }
+    }
+
+    if ($pos < $end && $extensions) {
+        $pos = $npos + $len + $indef;
+
+        return &$choice_loop($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var) if $seqof && $pos < $end;
+        # return 'op';
+        return ('op', $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var);
+    }
+
+    return ('', $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var);
 };
 
 my $decode_top_for_loop;
@@ -459,53 +535,20 @@ $decode_top_for_loop = sub {
             }
             elsif ($op->[cTYPE] == opCHOICE) {
 
-                CHOICELOOP: {
-                    my($tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr)
-                        or do {
-                            return if $pos == $end and ($seqof || defined $op->[cEXT]);
-                            die "decode error";
-                        };
 
-                    say "in choice loop \$tag is =>";
-                    dd $tag;
+                my $choice_result;
+                ($choice_result, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var)
+                    = &$choice_loop($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var);
 
-                    my $extensions;
-
-
-                    for my $cop (@{$op->[cCHILD]}) {
-                        say "in a real for loop";
-                        my $result;
-
-                        say "in a real for loop \$tag is =>";
-                        dd $tag;
-                        say "if this is undef, this is where things break";
-                        ($result, $cop, $extensions, $buf,  $pos,  $end,  $larr,  $seqof,  $op,  $optn,  $stash,  $idx,  $var,  $tag,  $len,  $npos,  $indef)
-                            = &$choice_loop_for_loop($cop, $extensions, $buf,  $pos,  $end,  $larr,  $seqof,  $op,  $optn,  $stash,  $idx,  $var,  $tag,  $len,  $npos,  $indef);
-
-                        say "What is the  value of \$tag here? => ";
-                        dd $tag;
-
-                        if ($result eq 'op') {
-                            return;
-                        }
-
-                        if ($result eq 'choice loop') {
-                            say 'redoing choice loop';
-                            redo CHOICELOOP;
-                        }
-                    }
-
-                    if ($pos < $end && $extensions) {
-                        $pos = $npos + $len + $indef;
-
-                        redo CHOICELOOP if $seqof && $pos < $end;
-                        return 'op';
-                    }
+                if ($choice_result eq 'op') {
+                    return 'op';
                 }
 
                 dd $op;
                 die "decode error" unless $op->[cEXT];
             }
+
+
             elsif ($op->[cTYPE] == opEXTENSIONS) {
                 $pos = $end; # Skip over the rest
             }
@@ -715,8 +758,10 @@ sub _dec_set {
   my $extensions;
 
   while ($pos < $end) {
-    my($tag,$len,$npos,$indef) = _decode_tl($_[4],$pos,$end,$larr)
-      or die "decode error";
+    my($error, $tag,$len,$npos,$indef) = _decode_tl($_[4],$pos,$end,$larr);
+    if ($error) {
+        die "decode error";
+    }
 
     my ($idx, $any, $done) = (-1);
 
@@ -737,7 +782,7 @@ SET_OP:
         $_[4],$npos,$len,$larr,
       );
 
-        if ($int_flag && $int_flag eq 'int') {
+        if ($int_flag && ($int_flag eq 'int' || $int_flag eq 'bcd')) {
             defined($var) ? $stash->{$var} : undef = $x_result;
         }
 
@@ -781,7 +826,7 @@ SET_OP:
           $nstash->{$cop->[cVAR]},
           $_[4],$npos,$len,$larr,
         );
-        if ($int_flag && $int_flag eq 'int') {
+        if ($int_flag && ($int_flag eq 'int' || $int_flag eq 'bcd')) {
           $nstash->{$cop->[cVAR]} = $x_result;
 
         }
@@ -846,195 +891,219 @@ SET_OP:
 my %_dec_time_opt = ( unixtime => 0, withzone => 1, raw => 2);
 
 sub _dec_time {
-# 0      1    2       3     4     5     6
-# $optn, $op, $stash, $var, $buf, $pos, $len
+    my $optn = shift;
+    my $op = shift;
+    my $stash = shift;
+    my $var = shift;
+    my $buf = shift;
+    my $pos = shift;
+    my $len = shift;
 
-  my $mode = $_dec_time_opt{$_[0]->{'decode_time'} || ''} || 0;
+    my $mode = $_dec_time_opt{$optn->{'decode_time'} || ''} || 0;
 
-  if ($mode == 2 or $_[6] == 0) {
-    $_[3] = substr($_[4],$_[5],$_[6]);
-    return;
-  }
+    if ($mode == 2 or $len == 0) {
+        $var = substr($buf, $pos, $len);
+        return;
+    }
 
-  my @bits = (substr($_[4],$_[5],$_[6])
-     =~ /^((?:\d\d)?\d\d)(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)((?:\.\d{1,3})?)(([-+])(\d\d)(\d\d)|Z)/)
-     or die "bad time format";
+    my @bits = (substr($buf, $pos, $len)
+        =~ /^((?:\d\d)?\d\d)(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)((?:\.\d{1,3})?)(([-+])(\d\d)(\d\d)|Z)/)
+        or die "bad time format";
 
-  if ($bits[0] < 100) {
-    $bits[0] += 100 if $bits[0] < 50;
-  }
-  else {
-    $bits[0] -= 1900;
-  }
-  $bits[1] -= 1;
-  require Time::Local;
-  my $time = Time::Local::timegm(@bits[5,4,3,2,1,0]);
-  $time += $bits[6] if length $bits[6];
-  my $offset = 0;
-  if ($bits[7] ne 'Z') {
-    $offset = $bits[9] * 3600 + $bits[10] * 60;
-    $offset = -$offset if $bits[8] eq '-';
-    $time -= $offset;
-  }
-  $_[3] = $mode ? [$time,$offset] : $time;
+    if ($bits[0] < 100) {
+        $bits[0] += 100 if $bits[0] < 50;
+    }
+    else {
+        $bits[0] -= 1900;
+    }
+
+    $bits[1] -= 1;
+    require Time::Local;
+    my $time = Time::Local::timegm(@bits[5,4,3,2,1,0]);
+    $time += $bits[6] if length $bits[6];
+    my $offset = 0;
+
+    if ($bits[7] ne 'Z') {
+        $offset = $bits[9] * 3600 + $bits[10] * 60;
+        $offset = -$offset if $bits[8] eq '-';
+        $time -= $offset;
+    }
+
+    $var = $mode ? [$time,$offset] : $time;
+
+    return ('int', $var);
 }
 
 
 sub _dec_utf8 {
-# 0      1    2       3     4     5     6
-# $optn, $op, $stash, $var, $buf, $pos, $len
-  $_[3] = Encode::decode('utf8', substr($_[4],$_[5],$_[6]));
+    my $optn = shift;
+    my $op = shift;
+    my $stash = shift;
+    my $var = shift;
+    my $buf = shift;
+    my $pos = shift;
+    my $len = shift;
+
+    $var = Encode::decode('utf8', substr($buf, $pos, $len));
+
+    return ('int', $var);
 }
 
 
 sub _decode_tl {
-  my($pos,$end,$larr) = @_[1,2,3];
+    my $buf = shift;
+    my $pos = shift;
+    my $end = shift;
+    my $larr = shift;
 
-  if ($pos >= $end) {
-      # say "Returning early: 1";
-    return;
-  }
-
-  my $indef = 0;
-
-  my $tag = substr($_[0], $pos++, 1);
-
-  if((unpack("C",$tag) & 0x1f) == 0x1f) {
-    my $b;
-    my $n=1;
-    do {
-
-      if ($pos >= $end) {
-          # say "Returning early: 2";
-        return;
-      }
-
-      $tag .= substr($_[0],$pos++,1);
-      $b = ord substr($tag,-1);
-    } while($b & 0x80);
-  }
-
-  if ($pos >= $end) {
-      # say "Returning early: 3";
-    return;
-  }
-
-  my $len = ord substr($_[0],$pos++,1);
-
-  if($len & 0x80) {
-    $len &= 0x7f;
-
-    if ($len) {
-      if ($pos+$len > $end) {
-          # say "Returning early: 4";
-        return;
-      }
-
-      my $padding = $len < 4 ? "\0" x (4 - $len) : "";
-      ($len,$pos) = (unpack("N", $padding . substr($_[0],$pos,$len)), $pos+$len);
+    if ($pos >= $end) {
+        return 'error 1';
     }
-    else {
-      unless (exists $larr->{$pos}) {
-          # _scan_indef($_[0],$pos,$end,$larr) or (say "Returning early: 5" && return);
-          _scan_indef($_[0],$pos,$end,$larr) or return;
-      }
-      $indef = 2;
-      $len = $larr->{$pos};
+
+    my $indef = 0;
+
+    my $tag = substr($buf, $pos++, 1);
+
+    if((unpack("C",$tag) & 0x1f) == 0x1f) {
+        my $b;
+        my $n=1;
+        do {
+
+            if ($pos >= $end) {
+                return 'error 2';
+            }
+
+            $tag .= substr($buf, $pos++, 1);
+            $b = ord substr($tag, -1);
+        } while($b & 0x80);
     }
+
+    if ($pos >= $end) {
+        return 'error 3';
   }
 
-  # say '$pre-tag';
-  # dd $_[0];
+    my $len = ord substr($buf,$pos++,1);
 
-  # say '$pos';
-  # dd $pos;
+    if($len & 0x80) {
+        $len &= 0x7f;
 
-  # say '$len';
-  # dd $len;
+        if ($len) {
+            if ($pos + $len > $end) {
+                return 'error 4';
+            }
 
-  # say '$indef';
-  # dd $indef;
+            my $padding = $len < 4 ? "\0" x (4 - $len) : "";
+            ($len, $pos) = (unpack("N", $padding . substr($buf, $pos, $len)), $pos + $len);
+        }
+        else {
+            unless (exists $larr->{$pos}) {
+                _scan_indef($buf, $pos, $end, $larr) or return 'error 5';
+            }
+            $indef = 2;
+            $len = $larr->{$pos};
+        }
+    }
 
-  # say '$end';
-  # dd $end;
+    if ($pos + $len + $indef > $end) {
+        return 'error 6';
+    }
 
-  if ($pos + $len + $indef > $end) {
-      # say "Returning early: 6";
-    return;
-  }
+    # return the tag, the length of the data, the position of the data
+    # and the number of extra bytes for indefinate encoding
 
-  # return the tag, the length of the data, the position of the data
-  # and the number of extra bytes for indefinate encoding
-
-  # say "Returning end";
-  return ($tag, $len, $pos, $indef);
+    return (undef, $tag, $len, $pos, $indef);
 }
 
 sub _dec_bcd {
-# 0      1    2       3     4     5     6
-# $optn, $op, $stash, $var, $buf, $pos, $len
+    my $optn = shift;
+    my $op = shift;
+    my $stash = shift;
+    my $var = shift;
+    my $buf = shift;
+    my $pos = shift;
+    my $len = shift;
 
-  ($_[3] = unpack("H*", substr($_[4],$_[5],$_[6]))) =~ s/[fF]$//;
-  1;
+    $var = unpack("H*", substr($buf, $pos, $len));
+    $var =~ s/[fF]$//;
+
+    return ('bcd', $var);
 }
 
 sub os2ip {
-    my($os, $biclass) = @_;
+    my $os = shift;
+    my $biclass = shift;
+
     my $base = $biclass->new(256);
     my $result = $biclass->new(0);
-    my $neg = unpack("C",$os) >= 0x80
-      and $os ^= pack("C",255) x length($os);
-    for (unpack("C*",$os)) {
-      $result = ($result * $base) + $_;
+
+    my $neg = unpack("C", $os) >= 0x80;
+
+    if ($neg) {
+        $os ^= pack("C", 255) x length($os);
     }
-    return $neg ? ($result + 1) * -1 : $result;
+
+    for (unpack("C*", $os)) {
+        $result = ($result * $base) + $_;
+    }
+
+    if ($neg) {
+        return -($result + 1);
+    }
+
+    return $result;
 }
 
 sub _scan_indef {
-  my($pos,$end,$larr) = @_[1,2,3];
-  my @depth = ( $pos );
+    my $buf = shift;
+    my $pos = shift;
+    my $end = shift;
+    my $larr = shift;
 
-  while(@depth) {
-    return if $pos+2 > $end;
+    my @depth = ( $pos );
 
-    if (substr($_[0],$pos,2) eq "\0\0") {
-      my $end = $pos;
-      my $stref = shift @depth;
-      # replace pos with length = end - pos
-      $larr->{$stref} = $end - $stref;
-      $pos += 2;
-      next;
+    while(@depth) {
+        return if $pos + 2 > $end;
+
+        if (substr($buf, $pos, 2) eq "\0\0") {
+            my $end = $pos;
+            my $stref = shift @depth;
+            # replace pos with length = end - pos
+            $larr->{$stref} = $end - $stref;
+            $pos += 2;
+            next;
+        }
+
+        my $tag = substr($buf, $pos++, 1);
+
+        if((unpack("C",$tag) & 0x1f) == 0x1f) {
+            my $b;
+            do {
+                $tag .= substr($buf, $pos++, 1);
+                $b = ord substr($tag, -1);
+            } while($b & 0x80);
+        }
+        return if $pos >= $end;
+
+        my $len = ord substr($buf, $pos++, 1);
+
+        if($len & 0x80) {
+            if ($len &= 0x7f) {
+                return if $pos+$len > $end ;
+
+                my $padding = $len < 4 ? "\0" x (4 - $len) : "";
+                $pos += $len + unpack("N", $padding . substr($buf, $pos, $len));
+            }
+
+            else {
+                # reserve another list element
+                unshift @depth, $pos;
+            }
+        }
+        else {
+            $pos += $len;
+        }
+
     }
-
-    my $tag = substr($_[0], $pos++, 1);
-
-    if((unpack("C",$tag) & 0x1f) == 0x1f) {
-      my $b;
-      do {
-    $tag .= substr($_[0],$pos++,1);
-    $b = ord substr($tag,-1);
-      } while($b & 0x80);
-    }
-    return if $pos >= $end;
-
-    my $len = ord substr($_[0],$pos++,1);
-
-    if($len & 0x80) {
-      if ($len &= 0x7f) {
-    return if $pos+$len > $end ;
-
-    my $padding = $len < 4 ? "\0" x (4 - $len) : "";
-    $pos += $len + unpack("N", $padding . substr($_[0],$pos,$len));
-      }
-      else {
-        # reserve another list element
-        unshift @depth, $pos;
-      }
-    }
-    else {
-      $pos += $len;
-    }
-  }
 
   1;
 }
