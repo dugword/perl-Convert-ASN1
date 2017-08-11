@@ -1014,7 +1014,7 @@ sub _dec_time {
         $time -= $offset;
     }
 
-    $var = $mode ? [$time,$offset] : $time;
+    $var = $mode ? [$time, $offset] : $time;
 
     return ('int', $var);
 }
@@ -1051,7 +1051,7 @@ sub _decode_tl {
 
     if((unpack("C",$tag) & 0x1f) == 0x1f) {
         my $b;
-        my $n=1;
+        my $n = 1;
         do {
 
             if ($pos >= $end) {
@@ -1065,9 +1065,9 @@ sub _decode_tl {
 
     if ($pos >= $end) {
         return 'error 3';
-  }
+    }
 
-    my $len = ord substr($buf,$pos++,1);
+    my $len = ord substr($buf, $pos++, 1);
 
     if($len & 0x80) {
         $len &= 0x7f;
@@ -1144,9 +1144,9 @@ sub _scan_indef {
     my $end = shift;
     my $larr = shift;
 
-    my @depth = ( $pos );
+    my @depth = $pos;
 
-    while(@depth) {
+    while (@depth) {
         return if $pos + 2 > $end;
 
         if (substr($buf, $pos, 2) eq "\0\0") {
@@ -1160,12 +1160,12 @@ sub _scan_indef {
 
         my $tag = substr($buf, $pos++, 1);
 
-        if((unpack("C",$tag) & 0x1f) == 0x1f) {
+        if((unpack("C", $tag) & 0x1f) == 0x1f) {
             my $b;
             do {
                 $tag .= substr($buf, $pos++, 1);
                 $b = ord substr($tag, -1);
-            } while($b & 0x80);
+            } while ($b & 0x80);
         }
         return if $pos >= $end;
 
@@ -1173,7 +1173,7 @@ sub _scan_indef {
 
         if($len & 0x80) {
             if ($len &= 0x7f) {
-                return if $pos+$len > $end ;
+                return if $pos+$len > $end;
 
                 my $padding = $len < 4 ? "\0" x (4 - $len) : "";
                 $pos += $len + unpack("N", $padding . substr($buf, $pos, $len));
