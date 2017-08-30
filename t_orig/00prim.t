@@ -100,9 +100,8 @@ my $ret = $asn->decode($buf) or warn $asn->error;
 # say "here is buf => \\";
 # dd $buf;
 # ok $ret;
-# say "Here is ret => \\";
-# dd $ret;
-# exit;
+say "Here is ret => \\";
+
 
 # print "RET\n";
 # dd $ret;
@@ -114,16 +113,21 @@ ok $ret->{'null'};
 ## BOOLEAN
 ##
 
+say "### Start ###";
 for my $val (0, 1, -99) {
   print "# BOOLEAN $val\n";
 
   my $result = pack("C*", 0x01, 0x01, $val ? 0xFF : 0);
+  say' $result';
+  dd $result;
 
   ok $asn->prepare(' bool BOOLEAN') or warn $asn->error;
   is $result, $asn->encode(bool => $val) or warn $asn->error;
   ok $ret = $asn->decode($result) or warn $asn->error;
   is !!$val, !!$ret->{'bool'};
 }
+
+# exit;
 
 ##
 ## INTEGER (tests 13 - 21)

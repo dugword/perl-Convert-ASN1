@@ -38,16 +38,7 @@ my @ctr;
 my $tag_loop;
 
 $tag_loop = sub {
-    my $buf = shift;
-    my $pos = shift;
-    my $end = shift;
-    my $larr = shift;
-    my $seqof = shift;
-    my $op = shift;
-    my $optn = shift;
-    my $stash = shift;;
-    my $idx = shift;
-    my $var = shift;
+    my ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var) = @_;
 
     my($error, $tag, $len, $npos, $indef) = _decode_tl($buf, $pos, $end, $larr);
 
@@ -100,6 +91,7 @@ $tag_loop = sub {
 
     if ($tag eq ($op->[cTAG] | pack("C",ASN_CONSTRUCTOR))) {
         my $ctr = $ctr[$op->[cTYPE]];
+        my @ctrlist;
 
         _decode(
             $optn,
@@ -107,7 +99,7 @@ $tag_loop = sub {
             undef,
             $npos,
             $npos+$len,
-            (\my @ctrlist),
+            (\@ctrlist),
             $larr,
             $buf,
         );
@@ -135,16 +127,7 @@ $tag_loop = sub {
 my $any_loop;
 
 $any_loop = sub {
-    my $buf = shift;
-    my $pos = shift;
-    my $end = shift;
-    my $larr = shift;
-    my $seqof = shift;
-    my $op = shift;
-    my $optn = shift;
-    my $stash = shift;;
-    my $idx = shift;
-    my $var = shift;
+    my ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var) = @_;
 
     my($error, $tag,$len,$npos,$indef) = _decode_tl($buf,$pos,$end,$larr);
     if ($error) {
@@ -179,10 +162,7 @@ $any_loop = sub {
 my $while_decode;
 
 $while_decode = sub {
-    my $script = shift;
-    my $result = shift;
-    my $stash = shift;
-    my $stash_hash = shift;
+    my ($script, $result, $stash, $stash_hash) = @_;
 
     my $child = $script->[0] or return ($script, $result, $stash, $stash_hash);
 
@@ -199,8 +179,7 @@ $while_decode = sub {
 };
 
 sub decode {
-    my $self  = shift;
-    my $pdu = shift;
+    my ($self, $pdu) = @_;
 
     my $stash_hash = {};
     my $result;
@@ -227,21 +206,7 @@ sub decode {
 
 my $choice_loop_alpha;
 $choice_loop_alpha = sub {
-    my $buf = shift;
-    my $pos = shift;
-    my $end = shift;
-    my $larr = shift;
-    my $seqof = shift;
-    my $op = shift;
-    my $optn = shift;
-    my $stash = shift;;
-    my $idx = shift;
-    my $var = shift;
-    my $tag = shift;
-    my $len = shift;
-    my $npos = shift;
-    my $indef = shift;
-    my $cop = shift;
+    my ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop) = @_;
 
     my $nstash = $seqof
         ? ($seqof->[$idx++]={})
@@ -272,27 +237,13 @@ $choice_loop_alpha = sub {
 
 my $choice_loop_beta;
 $choice_loop_beta = sub {
+    my ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop) = @_;
 
-    my $buf = shift;
-    my $pos = shift;
-    my $end = shift;
-    my $larr = shift;
-    my $seqof = shift;
-    my $op = shift;
-    my $optn = shift;
-    my $stash = shift;;
-    my $idx = shift;
-    my $var = shift;
-    my $tag = shift;
-    my $len = shift;
-    my $npos = shift;
-    my $indef = shift;
-    my $cop = shift;
-
+    my %tmp_stash;
     _decode(
         $optn,
         [$cop],
-        (\my %tmp_stash),
+        (\%tmp_stash),
         $pos,
         $npos+$len+$indef,
         undef,
@@ -316,22 +267,7 @@ $choice_loop_beta = sub {
 
 my $choice_loop_gamma;
 $choice_loop_gamma = sub {
-
-    my $buf = shift;
-    my $pos = shift;
-    my $end = shift;
-    my $larr = shift;
-    my $seqof = shift;
-    my $op = shift;
-    my $optn = shift;
-    my $stash = shift;;
-    my $idx = shift;
-    my $var = shift;
-    my $tag = shift;
-    my $len = shift;
-    my $npos = shift;
-    my $indef = shift;
-    my $cop = shift;
+    my ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef, $cop) = @_;
 
     my $ctr = $ctr[$cop->[cTYPE]];
 
@@ -342,13 +278,14 @@ $choice_loop_gamma = sub {
             : ref($stash) eq 'SCALAR'
                 ? ($$stash={}) : $stash;
 
+    my @ctrlist;
     _decode(
         $optn,
         [$cop],
         undef,
         $npos,
         $npos+$len,
-        (\my @ctrlist),
+        (\@ctrlist),
         $larr,
         $buf,
     );
@@ -362,23 +299,7 @@ $choice_loop_gamma = sub {
 my $choice_loop_for_loop;
 # foreach my $cop (@{$op->[cCHILD]}) 
 $choice_loop_for_loop = sub {
-    my $cop = shift;
-my $extensions = shift;
-    my $buf = shift;
-    my $pos = shift;
-    my $end = shift;
-    my $larr = shift;
-    my $seqof = shift;
-    my $op = shift;
-    my $optn = shift;
-    my $stash = shift;
-    my $idx = shift;
-    my $var = shift;
-    my $tag = shift;
-    my $len = shift; 
-    my $npos = shift;
-    my $indef = shift;
-
+    my ($cop, $extensions, $buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var, $tag, $len, $npos, $indef) = @_;
 
     if ($cop->[cTYPE] == opEXTENSIONS) {
         $extensions = 1;
@@ -419,17 +340,7 @@ my $extensions = shift;
 my $choice_loop;
 
 $choice_loop = sub {
-    my $buf = shift;
-    my $pos = shift;
-    my $end = shift;
-    my $larr = shift;
-    my $seqof = shift;
-    my $op = shift;
-    my $optn = shift;
-    my $stash = shift;
-    my $idx = shift;
-    my $var = shift;
-
+    my ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var) = @_;
 
     my($error, $tag, $len, $npos, $indef) = _decode_tl($buf, $pos, $end, $larr);
     if ($error) {
@@ -474,20 +385,11 @@ $choice_loop = sub {
 
 my $decode_top_for_loop;
 $decode_top_for_loop = sub {
-    my $buf = shift;
-    my $idx = shift;
-
-    my $optn = shift;
-    my $ops = shift;
-    my $stash = shift;
-    my $pos = shift;
-    my $end = shift;
-    my $seqof = shift;
-    my $larr = shift;
+    my ($buf, $idx, $optn, $ops, $stash, $pos, $end, $seqof, $larr) = @_;
 
     my $decode_op_for_loop;
     $decode_op_for_loop = sub {
-        my $op = shift;
+        my ($op) = @_;
         my $var = $op->[cVAR];
 
         if (length $op->[cTAG]) {
@@ -532,14 +434,14 @@ $decode_top_for_loop = sub {
 };
 
 sub _decode {
-    my ($optn, $ops, $stash, $pos, $end, $seqof, $larr) = @_;
+    my ($optn, $ops, $stash, $pos, $end, $seqof, $larr, $bufs) = @_;
 
     my $idx = 0;
 
     # we try not to copy the input buffer at any time
 
 
-    foreach my $buf ($_[-1]) {
+    foreach my $buf ($bufs) {
         ($buf, $idx, $optn, $ops, $stash, $pos, $end, $seqof, $larr)
             = &$decode_top_for_loop($buf, $idx, $optn, $ops, $stash, $pos, $end, $seqof, $larr);
     }
@@ -548,14 +450,7 @@ sub _decode {
 }
 
 sub _dec_boolean {
-    my $optn = shift;
-    my $op = shift;
-    my $stash = shift;
-    my $var = shift;
-    my $buf = shift;
-    my $pos = shift;
-    my $len = shift;
-    my $larr = shift;
+    my ($optn, $op, $stash, $var, $buf, $pos, $len, $larr) = @_;
 
     $var = unpack("C", substr($buf, $pos, 1)) ? 1 : 0;
 
@@ -566,7 +461,7 @@ sub _dec_boolean {
 sub _dec_integer {
     my ($optn, $op, $stash, $var, $buf, $pos, $len) = @_;
 
-    $buf = substr($_[4],$_[5],$_[6]);
+    $buf = substr($buf, $pos, $len);
     my $tmp = unpack("C",$buf) & 0x80 ? pack("C",255) : pack("C",0);
     if ($len > 4) {
         $var = os2ip($buf, $optn->{decode_bigint} || 'Math::BigInt');
@@ -580,14 +475,7 @@ sub _dec_integer {
 
 
 sub _dec_bitstring {
-    my $optn = shift;
-    my $op = shift;
-    my $stash = shift;
-    my $var = shift;
-    my $buf = shift;
-    my $pos = shift;
-    my $len = shift;
-    my $larr = shift;
+    my ($optn, $op, $stash, $var, $buf, $pos, $len, $larr) = @_;
 
     $var = [ substr($buf, $pos + 1, $len - 1), ($len - 1 ) * 8 - unpack("C", substr($buf, $pos, 1)) ];
 
@@ -596,14 +484,7 @@ sub _dec_bitstring {
 
 
 sub _dec_string {
-    my $optn = shift;
-    my $op = shift;
-    my $stash = shift;
-    my $var = shift;
-    my $buf = shift;
-    my $pos = shift;
-    my $len = shift;
-    my $larr = shift;
+    my ($optn, $op, $stash, $var, $buf, $pos, $len, $larr) = @_;
 
     $var = substr($buf, $pos, $len);
 
@@ -612,14 +493,7 @@ sub _dec_string {
 
 
 sub _dec_null {
-    my $optn = shift;
-    my $op = shift;
-    my $stash = shift;
-    my $var = shift;
-    my $buf = shift;
-    my $pos = shift;
-    my $len = shift;
-    my $larr = shift;
+    my ($optn, $op, $stash, $var, $buf, $pos, $len, $larr) = @_;
 
     $var = exists($optn->{decode_null}) ? $optn->{decode_null} : 1;
 
@@ -628,14 +502,7 @@ sub _dec_null {
 
 
 sub _dec_object_id {
-    my $optn = shift;
-    my $op = shift;
-    my $stash = shift;
-    my $var = shift;
-    my $buf = shift;
-    my $pos = shift;
-    my $len = shift;
-    my $larr = shift;
+    my ($optn, $op, $stash, $var, $buf, $pos, $len, $larr) = @_;
 
     my @data = unpack("w*", substr($buf, $pos, $len));
 
@@ -659,14 +526,7 @@ sub _dec_object_id {
 
 
 sub _dec_real {
-    my $optn = shift;
-    my $op = shift;
-    my $stash = shift;
-    my $var = shift;
-    my $buf = shift;
-    my $pos = shift;
-    my $len = shift;
-    my $larr = shift;
+    my ($optn, $op, $stash, $var, $buf, $pos, $len, $larr) = @_;
 
     $var = 0.0, return ('int', $var) unless $len;
 
@@ -711,14 +571,7 @@ sub _dec_real {
 }
 
 sub _dec_explicit {
-    my $optn = shift;
-    my $op = shift;
-    my $stash = shift;
-    my $var = shift;
-    my $buf = shift;
-    my $pos = shift;
-    my $len = shift;
-    my $larr = shift;
+    my ($optn, $op, $stash, $var, $buf, $pos, $len, $larr) = @_;
 
     $op->[cCHILD][0][cVAR] = $op->[cVAR] unless $op->[cCHILD][0][cVAR];
 
@@ -737,14 +590,7 @@ sub _dec_explicit {
 }
 
 sub _dec_sequence {
-    my $optn = shift;
-    my $op = shift;
-    my $stash = shift;
-    my $var = shift;
-    my $buf = shift;
-    my $pos = shift;
-    my $len = shift;
-    my $larr = shift;
+    my ($optn, $op, $stash, $var, $buf, $pos, $len, $larr) = @_;
 
   if (defined( my $ch = $op->[cCHILD])) {
     _decode(
@@ -765,16 +611,129 @@ sub _dec_sequence {
   return ('int', $var);
 }
 
+my $set_op_loop;
+
+$set_op_loop = sub {
+    my ($op, $optn, $stash, $var, $buf, $pos, $len, $larr, $ch, $end, $at_done, $extensions, $error, $tag, $npos, $indef, $idx, $any, $done) = @_;
+
+    $idx++;
+
+    if (length($op->[cTAG])) {
+
+        if ($tag eq $op->[cTAG]) {
+            my $var = $op->[cVAR];
+            my ($int_flag, $x_result) = &{$decode[$op->[cTYPE]]}(
+                $optn,
+                $op,
+                $stash,
+                # We send 1 if there is not var as if there is the decode
+                # should be getting undef. So if it does not get undef
+                # it knows it has no variable
+                (defined($var) ? $stash->{$var} : 1),
+                $buf,
+                $npos,
+                $len,
+                $larr,
+            );
+
+            if ($int_flag && ($int_flag eq 'int' || $int_flag eq 'bcd')) {
+                defined($var) ? $stash->{$var} : undef = $x_result;
+            }
+
+            $done = $idx;
+            # last SET_OP;
+            return ('last', $op, $optn, $stash, $var, $buf, $pos, $len, $larr, $ch, $end, $at_done, $extensions, $error, $tag, $npos, $indef, $idx, $any, $done);
+
+        }
+
+        if ($tag eq ($op->[cTAG] | pack("C",ASN_CONSTRUCTOR)) and my $ctr = $ctr[$op->[cTYPE]]) {
+            my @ctrlist;
+            _decode(
+                $optn,
+                [$op],
+                undef,
+                $npos,
+                $npos + $len,
+                (\@ctrlist),
+                $larr,
+                $buf,
+            );
+
+            $stash->{$op->[cVAR]} = &{$ctr}(@ctrlist) if defined $op->[cVAR];
+            $done = $idx;
+            # last SET_OP;
+            return ('last', $op, $optn, $stash, $var, $buf, $pos, $len, $larr, $ch, $end, $at_done, $extensions, $error, $tag, $npos, $indef, $idx, $any, $done);
+        }
+
+        return ('next', $op, $optn, $stash, $var, $buf, $pos, $len, $larr, $ch, $end, $at_done, $extensions, $error, $tag, $npos, $indef, $idx, $any, $done);
+        # next SET_OP;
+    }
+    elsif ($op->[cTYPE] == opANY) {
+        $any = $idx;
+    }
+    elsif ($op->[cTYPE] == opCHOICE) {
+        my $var = $op->[cVAR];
+
+        foreach my $cop (@{$op->[cCHILD]}) {
+            if ($tag eq $cop->[cTAG]) {
+                my $nstash = defined($var) ? ($stash->{$var}={}) : $stash;
+
+                my ($int_flag, $x_result) = &{$decode[$cop->[cTYPE]]}(
+                    $optn,
+                    $cop,
+                    $nstash,
+                    $nstash->{$cop->[cVAR]},
+                    $buf,
+                    $npos,
+                    $len,
+                    $larr,
+                );
+
+                if ($int_flag && ($int_flag eq 'int' || $int_flag eq 'bcd')) {
+                    $nstash->{$cop->[cVAR]} = $x_result;
+
+                }
+
+                $done = $idx;
+                # last SET_OP;
+                return ('last', $op, $optn, $stash, $var, $buf, $pos, $len, $larr, $ch, $end, $at_done, $extensions, $error, $tag, $npos, $indef, $idx, $any, $done);
+            }
+
+            if ($tag eq ($cop->[cTAG] | pack("C",ASN_CONSTRUCTOR)) and my $ctr = $ctr[$cop->[cTYPE]]) {
+                my $nstash = defined($var) ? ($stash->{$var}={}) : $stash;
+
+                my @ctrlist;
+                _decode(
+                    $optn,
+                    [$cop],
+                    undef,
+                    $npos,
+                    $npos + $len,
+                    (\@ctrlist),
+                    $larr,
+                    $buf,
+                );
+
+                $nstash->{$cop->[cVAR]} = &{$ctr}(@ctrlist);
+                $done = $idx;
+                # last SET_OP;
+                return ('last', $op, $optn, $stash, $var, $buf, $pos, $len, $larr, $ch, $end, $at_done, $extensions, $error, $tag, $npos, $indef, $idx, $any, $done);
+            }
+        }
+    }
+    elsif ($op->[cTYPE] == opEXTENSIONS) {
+        $extensions = $idx;
+    }
+    else {
+        die "internal error";
+    }
+
+    return ('next', $op, $optn, $stash, $var, $buf, $pos, $len, $larr, $ch, $end, $at_done, $extensions, $error, $tag, $npos, $indef, $idx, $any, $done);
+};
+
 
 sub _dec_set {
-    my $optn = shift;
-    my $op = shift;
-    my $stash = shift;
-    my $var = shift;
-    my $buf = shift;
-    my $pos = shift;
-    my $len = shift;
-    my $larr = shift;
+    my ($optn, $op, $stash, $var, $buf, $pos, $len, $larr) = @_;
 
     # decode SET OF the same as SEQUENCE OF
     my $ch = $op->[cCHILD];
@@ -798,142 +757,6 @@ sub _dec_set {
 
         # SET_OP:
         # foreach my $op (@$ch)
-        my $set_op_loop;
-
-        $set_op_loop = sub {
-            my $op = shift;
-            my $optn = shift;
-            my $stash = shift;
-            my $var = shift;
-            my $buf = shift;
-            my $pos = shift;
-            my $len = shift;
-            my $larr = shift;
-            my $ch = shift;
-            my $end = shift;
-            my $at_done = shift;
-            my $extensions = shift;
-            my $error = shift;
-            my $tag = shift;
-            my $npos = shift;
-            my $indef = shift;
-            my $idx = shift;
-            my $any = shift;
-            my $done = shift;
-
-
-            $idx++;
-
-            if (length($op->[cTAG])) {
-
-                if ($tag eq $op->[cTAG]) {
-                    my $var = $op->[cVAR];
-                    my ($int_flag, $x_result) = &{$decode[$op->[cTYPE]]}(
-                        $optn,
-                        $op,
-                        $stash,
-                        # We send 1 if there is not var as if there is the decode
-                        # should be getting undef. So if it does not get undef
-                        # it knows it has no variable
-                        (defined($var) ? $stash->{$var} : 1),
-                        $buf,
-                        $npos,
-                        $len,
-                        $larr,
-                    );
-
-                    if ($int_flag && ($int_flag eq 'int' || $int_flag eq 'bcd')) {
-                        defined($var) ? $stash->{$var} : undef = $x_result;
-                    }
-
-                    $done = $idx;
-                    # last SET_OP;
-                    return ('last', $op, $optn, $stash, $var, $buf, $pos, $len, $larr, $ch, $end, $at_done, $extensions, $error, $tag, $npos, $indef, $idx, $any, $done);
-
-                }
-
-                if ($tag eq ($op->[cTAG] | pack("C",ASN_CONSTRUCTOR)) and my $ctr = $ctr[$op->[cTYPE]]) {
-                    _decode(
-                        $optn,
-                        [$op],
-                        undef,
-                        $npos,
-                        $npos + $len,
-                        (\my @ctrlist),
-                        $larr,
-                        $buf,
-                    );
-
-                    $stash->{$op->[cVAR]} = &{$ctr}(@ctrlist) if defined $op->[cVAR];
-                    $done = $idx;
-                    # last SET_OP;
-                    return ('last', $op, $optn, $stash, $var, $buf, $pos, $len, $larr, $ch, $end, $at_done, $extensions, $error, $tag, $npos, $indef, $idx, $any, $done);
-                }
-
-                return ('next', $op, $optn, $stash, $var, $buf, $pos, $len, $larr, $ch, $end, $at_done, $extensions, $error, $tag, $npos, $indef, $idx, $any, $done);
-                # next SET_OP;
-            }
-            elsif ($op->[cTYPE] == opANY) {
-                $any = $idx;
-            }
-            elsif ($op->[cTYPE] == opCHOICE) {
-                my $var = $op->[cVAR];
-
-                foreach my $cop (@{$op->[cCHILD]}) {
-                    if ($tag eq $cop->[cTAG]) {
-                        my $nstash = defined($var) ? ($stash->{$var}={}) : $stash;
-
-                        my ($int_flag, $x_result) = &{$decode[$cop->[cTYPE]]}(
-                            $optn,
-                            $cop,
-                            $nstash,
-                            $nstash->{$cop->[cVAR]},
-                            $buf,
-                            $npos,
-                            $len,
-                            $larr,
-                        );
-
-                        if ($int_flag && ($int_flag eq 'int' || $int_flag eq 'bcd')) {
-                            $nstash->{$cop->[cVAR]} = $x_result;
-
-                        }
-
-                        $done = $idx;
-                        # last SET_OP;
-                        return ('last', $op, $optn, $stash, $var, $buf, $pos, $len, $larr, $ch, $end, $at_done, $extensions, $error, $tag, $npos, $indef, $idx, $any, $done);
-                    }
-
-                    if ($tag eq ($cop->[cTAG] | pack("C",ASN_CONSTRUCTOR)) and my $ctr = $ctr[$cop->[cTYPE]]) {
-                        my $nstash = defined($var) ? ($stash->{$var}={}) : $stash;
-
-                        _decode(
-                            $optn,
-                            [$cop],
-                            undef,
-                            $npos,
-                            $npos + $len,
-                            (\my @ctrlist),
-                            $larr,
-                            $buf,
-                        );
-
-                        $nstash->{$cop->[cVAR]} = &{$ctr}(@ctrlist);
-                        $done = $idx;
-                        # last SET_OP;
-                        return ('last', $op, $optn, $stash, $var, $buf, $pos, $len, $larr, $ch, $end, $at_done, $extensions, $error, $tag, $npos, $indef, $idx, $any, $done);
-                    }
-                }
-            }
-            elsif ($op->[cTYPE] == opEXTENSIONS) {
-                $extensions = $idx;
-            }
-            else {
-                die "internal error";
-            }
-
-            return ('next', $op, $optn, $stash, $var, $buf, $pos, $len, $larr, $ch, $end, $at_done, $extensions, $error, $tag, $npos, $indef, $idx, $any, $done);
-        };
 
 
         foreach my $op (@$ch) {
@@ -976,13 +799,7 @@ sub _dec_set {
 my %_dec_time_opt = ( unixtime => 0, withzone => 1, raw => 2);
 
 sub _dec_time {
-    my $optn = shift;
-    my $op = shift;
-    my $stash = shift;
-    my $var = shift;
-    my $buf = shift;
-    my $pos = shift;
-    my $len = shift;
+    my ($optn, $op, $stash, $var, $buf, $pos, $len, $larr) = @_;
 
     my $mode = $_dec_time_opt{$optn->{'decode_time'} || ''} || 0;
 
@@ -1021,13 +838,7 @@ sub _dec_time {
 
 
 sub _dec_utf8 {
-    my $optn = shift;
-    my $op = shift;
-    my $stash = shift;
-    my $var = shift;
-    my $buf = shift;
-    my $pos = shift;
-    my $len = shift;
+    my ($optn, $op, $stash, $var, $buf, $pos, $len, $larr) = @_;
 
     $var = Encode::decode('utf8', substr($buf, $pos, $len));
 
@@ -1036,10 +847,7 @@ sub _dec_utf8 {
 
 
 sub _decode_tl {
-    my $buf = shift;
-    my $pos = shift;
-    my $end = shift;
-    my $larr = shift;
+    my ($buf, $pos, $end, $larr) = @_;
 
     if ($pos >= $end) {
         return 'error 1';
@@ -1100,13 +908,7 @@ sub _decode_tl {
 }
 
 sub _dec_bcd {
-    my $optn = shift;
-    my $op = shift;
-    my $stash = shift;
-    my $var = shift;
-    my $buf = shift;
-    my $pos = shift;
-    my $len = shift;
+    my ($optn, $op, $stash, $var, $buf, $pos, $len, $larr) = @_;
 
     $var = unpack("H*", substr($buf, $pos, $len));
     $var =~ s/[fF]$//;
@@ -1115,8 +917,7 @@ sub _dec_bcd {
 }
 
 sub os2ip {
-    my $os = shift;
-    my $biclass = shift;
+    my ($os, $biclass) = @_;
 
     my $base = $biclass->new(256);
     my $result = $biclass->new(0);
@@ -1139,10 +940,7 @@ sub os2ip {
 }
 
 sub _scan_indef {
-    my $buf = shift;
-    my $pos = shift;
-    my $end = shift;
-    my $larr = shift;
+    my ($buf, $pos, $end, $larr) = @_;
 
     my @depth = $pos;
 
@@ -1193,6 +991,15 @@ sub _scan_indef {
   1;
 }
 
-sub _ctr_string { join '', @_ }
+sub _ctr_string {
+    my (@args) = @_;
+    return join '', @args;
+}
+
+sub _ctr_bitstring {
+    die "Never get's called";
+    my (@args) = @_;
+    return join '', @args;
+}
 
 1;

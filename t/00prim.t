@@ -131,10 +131,37 @@ my $encoded = $asn.encode( (null => 1) );
 
 is $encoded, Buf.new(5,0);
 
-done-testing;
 
 # is $encoded, Buf.new(0x5, 0x0), 'null encoded';
 #
-say "### Start ###";
 my $decoded = $asn.decode(Buf.new(0x5, 0x0));
-dd $decoded;
+
+say "# BOOLEAN";
+for (0, 1, -99) -> $val {
+    my $result = Buf.new(0x01, 0x01, $val ?? 0xff !! 0);
+    $asn.prepare(' bool BOOLEAN ') or warn "some error";
+    is $result, $asn.encode( (bool => $val) );
+    my $ret;
+    ok $ret = $asn.decode($result);
+}
+
+say "### Start ###";
+say "# INTEGER";
+
+my %integer = (
+    Buf.new(0x02, 0x02, 0x00, 0x80) => 128,
+    Buf.new(0x02, 0x01, 0x80)       => -128,
+    Buf.new(0x02, 0x02, 0xff, 0x01) => -255,
+    Buf.new(0x02, 0x01, 0x00)       => 0,
+    Buf.new(0x02, 0x03, 0x66, 0x77, 0x99) => 0x667799,
+    Buf.new(0x02, 0x02, 0xfe, 0x37) => -457,
+    Buf.new(0x02, 0x04, 0x40, 0x00, 0x00, 0x00) => 2 ** 30,
+    Buf.new(0x02, 0x04, 0xc0, 0x00, 0x00, 0x00) => -2 ** 30,
+);
+
+for %integer.kv -> $key, $value {
+    say "$key => $value";
+
+}
+
+done-testing;
