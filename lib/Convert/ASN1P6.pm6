@@ -2,6 +2,8 @@ use v6;
 # use Data::Dump;
 use experimental :pack;
 
+my $parse_count = 0;
+
 my $tagdefault = 'IMPLICIT';
 
 class Compiled is Array {}
@@ -332,20 +334,28 @@ my @ctr;
             # $!script = |(%compiled.values)[0];
             $!script = (%compiled.values)[0];
 
+            # say "prepared...";
+            # say "options: encoding: ", $!encoding, ", tag-default: ", $!tag-default;
+            # print "tree: ";
+            # dd %!tree;
+            # print "script: ";
+            # dd $!script;
+            # say "#";
+
             return %compiled;
         }
 
-        method encode(%stash) {
+        method encode($stash) {
             # my $stash = @args == 1 ?? @args.shift !! { |@args };
 
-            my $foo = _encode($!encoding, $!script, %stash);
+            my $foo = _encode($!encoding, $!script, $stash);
 
             return $foo;
         }
 
         method decode(Buf $pdu) {
             # TODO: need to pass options
-            return myDecode($pdu, $!script, '');
+            return myDecode($pdu, $!script, {encoding => "BER", tagdefault => "IMPLICIT"} );
         }
 
     }
@@ -703,6 +713,7 @@ my @ctr;
         $yym is copy,
         $val is copy,
     ){
+        $parse_count++;
         unless ($index = @defred[$state]) {
             my $parsed;
             ($parsed, $char, $lex, $state, $index, $lval, $ssp, $vsp, $ss, $vs)
@@ -724,7 +735,7 @@ my @ctr;
         }
 
         elsif ($index == 3) {
-            $val = { $vs.[ $vsp - 2 ], [ $vs.[ $vsp ] ] };
+            $val = { $vs.[ $vsp - 2 ] => [ $vs.[ $vsp ] ] };
         }
 
         elsif ($index == 4) {
@@ -854,6 +865,7 @@ my @ctr;
 
         elsif ($index == 43) {
             @( $val = $vs.[ $vsp -1 ])[cOPT] = ($vs.[ $vsp ]);
+
         }
 
         elsif ($index == 47) {
@@ -894,8 +906,9 @@ my @ctr;
             }
 
             if $char == 0 {
-                my %tree = $vs.[$vsp];
-                return %tree;
+                # my %tree = $vs.[$vsp];
+                # return %tree;
+                return $vs.[$vsp];
             }
 
             return parse_loop($char, $lex, $state, $index, $lval, $ssp, $vsp, $ss, $vs, $yym, $val);
@@ -916,6 +929,7 @@ my @ctr;
         $ss.[++$ssp] = $state;
         $vs.[++$vsp] = $val;
 
+        # (dd $vs && die "remove me") if $parse_count == 11;
         parse_loop($char, $lex, $state, $index, $lval, $ssp, $vsp, $ss, $vs, $yym, $val);
     }
 
@@ -1231,30 +1245,39 @@ my @ctr;
     );
 
 
-    sub _encode($optn, @ops, %stash, @path = [], $buffer is copy = Buf.new) {
+    sub _encode($optn, @ops, $stash, @path = [], $buffer is copy = Buf.new) {
         my $var;
+
+        # say "LOOK => ",$stash.WHAT;
+        # my %stash = $stash;
 
         for @ops -> $op {
             next if $op.[cTYPE] == opEXTENSIONS;
 
             if (defined(my $opt = $op.[cOPT])) {
-                next unless defined %stash{$opt};
+                next unless defined $stash{$opt};
             }
 
             if (defined($var = $op.[cVAR])) {
                 @path.push($var);
-                die @path.join(".")," is undefined" unless defined %stash{$var};
+                die @path.join(".")," is undefined" unless defined $stash{$var};
             }
 
             $buffer ~= $op.[cTAG];
 
             my @stash_val;
 
-            if (defined($var)) {
-                @stash_val = (%stash, %stash{$var});
+            # Horse shit
+            if $stash ~~ Pair {
+                if (defined($var)) {
+                    @stash_val = ($stash, $stash{$var});
+                }
+                else {
+                    @stash_val = ($stash, Any);
+                }
             }
             else {
-                @stash_val = (%stash, Any);
+                @stash_val = ({}, $stash);
             }
 
             # $buffer = &{ $encode[ $op->[cTYPE] ] }(
@@ -1299,7 +1322,8 @@ my @ctr;
         }
 
         else {
-            my $val = int($var);
+            # HACK Dropping int() call to floor values. Should never happen?
+            my $val = $var;
             my $neg = ($val < 0);
             my $len = num-length($neg ?? +^$val !! $val);
             my $msb = $val +& (:16<80> +< (($len - 1) * 8));
@@ -1307,7 +1331,7 @@ my @ctr;
             $len++ if $neg ?? ?^$msb !! $msb;
 
             $buf ~= asn-encode-length($len);
-            $buf ~= substr(pack("N",$val), -$len);
+            $buf ~= pack("N", $val).subbuf(*-$len);
         }
 
         return $buf;
@@ -1642,6 +1666,22 @@ $tag_loop = sub {
         # it knows it has no variable
         # my $foo = ($seqof ? $seqof->[$idx++] : defined($var) ? $stash->{$var} : ref($stash) eq 'SCALAR' ? $$stash : 1);
 
+        # say "op => ", $op;
+        # say "optn => ", $optn.perl;
+        # say "stash => ", $stash;
+        # say "seqof => ", $seqof;
+        # say "var => ", $var;
+        # say "stash => ", $stash;
+        # say "buf => ", $buf;
+        # say "npos => ", $npos;
+        # say "len => ", $len;
+        # say "larr => ", $larr;
+
+        # say "Blarg!";
+
+        # die unless defined($var);
+
+        # say "cTYPE => ", cTYPE;
         my ($int_flag, $x_result) = &(@decode[$op.[cTYPE]])(
             $optn,
             $op,
@@ -1661,10 +1701,14 @@ $tag_loop = sub {
             elsif defined($var) {
                 $stash.{$var} = $x_result;
             }
-            elsif $stash.WHAT eq 'SCALAR' {
-                $$stash = $x_result;
+            # HACK Don't know if this will always work
+            else {
+                # say "This is my spot";
+                $stash = $x_result;
             }
         }
+
+        # dd $stash;
 
         $pos = $npos + $len + $indef;
 
@@ -1746,7 +1790,7 @@ $any_loop = sub {
 };
 
 
-sub while_decode($script, $result is rw, $stash is rw, $stash_hash) {
+sub while_decode($script is rw, $result is rw, $stash is rw, $stash_hash) {
     # my ($script, $result, $stash, $stash_hash) = @_;
 
     my $child = $script[0] or return ($script, $result, $stash, $stash_hash);
@@ -1757,7 +1801,9 @@ sub while_decode($script, $result is rw, $stash is rw, $stash_hash) {
         return ($script, $result, $stash, $stash_hash);
     }
 
-    return ($script, $result, $stash, $stash_hash) if $child.[cTYPE] == opCHOICE or $child.[cLOOP];
+    if $child.[cTYPE] == opCHOICE or $child.[cLOOP] {
+        return ($script, $result, $stash, $stash_hash)
+    }
 
     $script = $child.[cCHILD];
 
@@ -1769,13 +1815,17 @@ sub myDecode ($pdu, $script is copy, $options) {
     my $result;
     my $stash = $result;
 
+    # Make a copy because this gets changed, but we don't use the change
+    my $foo = $script;
+
 
     ($script, $result, $stash, $stash_hash) = while_decode($script, $result, $stash, $stash_hash);
 
 
-    _decode(
+    # say "HERE => ",$options.perl;
+    my $blerg2 = _decode(
         $options,
-        $script,
+        $foo, # $script,
         $stash,
         0,
         $pdu.bytes,
@@ -1784,7 +1834,10 @@ sub myDecode ($pdu, $script is copy, $options) {
         $pdu,
     );
 
+    # say "blerg 2 => ", $blerg2;
 
+
+    return $blerg2;
     return $result
 }
 
@@ -1978,8 +2031,10 @@ $decode_top_for_loop = sub {
 
 
         if $op.[cTAG].elems {
+            # say "#" x 80;
             ($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var)
                 = &$tag_loop($buf, $pos, $end, $larr, $seqof, $op, $optn, $stash, $idx, $var);
+                # say "stash => ", $stash;
         }
         else { # opTag length is zero, so it must be an ANY, CHOICE or EXTENSIONS
             if $op.[cTYPE] == opANY {
@@ -2011,14 +2066,16 @@ $decode_top_for_loop = sub {
 
     };
 
-    for @($ops) <-> $op {
+    # TODO What was this op? for @($ops) <-> $op {
+    for @($ops) -> $op {
         &$decode_op_for_loop($op);
     }
 
     return ($buf, $idx, $optn, $ops, $stash, $pos, $end, $seqof, $larr);
 };
 
-sub _decode ($optn is copy, $ops is copy, $stash is copy, $pos is copy, $end is copy, $seqof is copy, $larr is copy, $bufs) {
+#hack stash rw
+sub _decode ($optn is copy, $ops is copy, $stash is rw, $pos is copy, $end is copy, $seqof is copy, $larr is copy, $bufs) {
     my $idx = 0;
 
     # we try not to copy the input buffer at any time
@@ -2029,6 +2086,9 @@ sub _decode ($optn is copy, $ops is copy, $stash is copy, $pos is copy, $end is 
             = &$decode_top_for_loop($buf, $idx, $optn, $ops, $stash, $pos, $end, $seqof, $larr);
     }
 
+    # say "More stash => ", $stash;
+
+    return $stash;
     die "decode error $pos $end" unless $pos == $end;
 }
 
@@ -2039,16 +2099,48 @@ sub _dec_boolean ($optn, $op, $stash, $var, $buf, $pos, $len, $larr) {
 }
 
 
-sub _dec_integer ($optn, $op, $stash, $var, $buf, $pos, $len) {
-    $buf = substr($buf, $pos, $len);
+sub _dec_integer ($optn, $op, $stash, $var is copy, $buf is rw, $pos, $len, $larr) {
+    # say "Decoding an integer";
+    $buf = $buf.subbuf($pos, $len);
     my $tmp = $buf.unpack("C") +& 0x80 ?? pack("C",255) !! pack("C",0);
     if $len > 4 {
+        # say "Here";
         $var = os2ip($buf, $optn.{'decode_bigint'} || 'Math::BigInt');
     } else {
+        # say "There";
         # N unpacks an unsigned value
-        $var = (pack("l", ($tmp x (4 - $len) ~ $buf).unpack("N"))).unpack("l");
+
+        # HACK There should be a better way to do this
+        my $padded-buf = Buf.new();
+        for (0 ..^ (4 - $len)) -> $i {
+            $padded-buf ~= $tmp;
+        }
+
+        constant top-bit = 2 ** (8 * 4 - 1);
+        constant max-value = 2 ** (8 * 4 - 1) - 1;
+        my $foo = ($padded-buf ~ $buf);
+
+        # ??? Or is this "L", was previously "l"
+        # $var = unpack("l",pack("l",unpack("N", $tmp x (4 - $len) . $buf)));
+        # dd $foo;
+        my $network-bytes = $foo.unpack("N");
+        # dd $network-bytes;
+        my $packed-bytes = pack("L", $network-bytes);
+        my $sig-byte = $packed-bytes.unpack("xxxC*");
+        my $unpacked-bytes = $packed-bytes.unpack("L");
+        # dd $unpacked-bytes;
+
+        if ($sig-byte >= 128) {
+            # say "and";
+            $var = $unpacked-bytes - top-bit - 1 - max-value;
+        }
+        else {
+            # say "everywhere";
+            $var = $unpacked-bytes;
+        }
     }
 
+    # dd $var;
     return ('int', $var);
 }
 

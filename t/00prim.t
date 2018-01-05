@@ -149,19 +149,35 @@ say "### Start ###";
 say "# INTEGER";
 
 my %integer = (
-    Buf.new(0x02, 0x02, 0x00, 0x80) => 128,
-    Buf.new(0x02, 0x01, 0x80)       => -128,
-    Buf.new(0x02, 0x02, 0xff, 0x01) => -255,
-    Buf.new(0x02, 0x01, 0x00)       => 0,
-    Buf.new(0x02, 0x03, 0x66, 0x77, 0x99) => 0x667799,
-    Buf.new(0x02, 0x02, 0xfe, 0x37) => -457,
-    Buf.new(0x02, 0x04, 0x40, 0x00, 0x00, 0x00) => 2 ** 30,
-    Buf.new(0x02, 0x04, 0xc0, 0x00, 0x00, 0x00) => -2 ** 30,
+    Buf.new(0x02, 0x02, 0x00, 0x80).unpack('H*')             => 128,
+    Buf.new(0x02, 0x01, 0x80).unpack('H*')                   => -128,
+    Buf.new(0x02, 0x02, 0xff, 0x01).unpack('H*')             => -255,
+    Buf.new(0x02, 0x01, 0x00).unpack('H*')                   => 0,
+    Buf.new(0x02, 0x03, 0x66, 0x77, 0x99).unpack('H*')       => 0x667799,
+    Buf.new(0x02, 0x02, 0xfe, 0x37).unpack('H*')             => -457,
+    Buf.new(0x02, 0x04, 0x40, 0x00, 0x00, 0x00).unpack('H*') => 2 ** 30,
+    Buf.new(0x02, 0x04, 0xc0, 0x00, 0x00, 0x00).unpack('H*') => -2 ** 30,
 );
 
-for %integer.kv -> $key, $value {
-    say "$key => $value";
-
+$asn.prepare(' integer INTEGER ') or warn "some error";
+for %integer.kv -> $result, $value {
+    say "# $result => $value";
+    my $encoded_value = $asn.encode( (integer => $value) );
+    is $encoded_value.unpack('H*'), $result;
+    my $decoded_value = $asn.decode(pack('H*', $result));
+    is $decoded_value<integer>, $value;
 }
 
-done-testing;
+# say "#" x 80;
+$asn.prepare('test ::= INTEGER ') or warn "some error";
+{ 
+    my $result = Buf.new(0x02, 0x01, 0x09);
+
+    my $encoded = $asn.encode(9);
+    is $result.unpack("H*"), $encoded.unpack("H*");;
+    is $result, $encoded;
+    my $ret = $asn.decode($result);
+    exit;
+    is $ret, 9;
+}
+
